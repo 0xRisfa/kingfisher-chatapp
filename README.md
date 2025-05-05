@@ -59,8 +59,8 @@ kingfisher-chat-app/
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/kingfisher-chat-app.git
-cd kingfisher-chat-app
+git clone https://github.com/0xRisfa/kingfisher-chatapp.git
+cd kingfisher-chatapp
 ```
 
 ### 2. Configure the Backend
