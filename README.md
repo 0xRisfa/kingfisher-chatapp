@@ -23,9 +23,6 @@ To run this project, ensure you have the following installed on your system:
 ### Keystore for HTTPS
 - A `.jks` file for SSL/TLS configuration.
 
-### Node.js *(Optional for Frontend Builds)*
-- [Download Node.js](https://nodejs.org/)
-
 ---
 
 ## 📁 Project Structure
@@ -36,7 +33,7 @@ kingfisher-chat-app/
 ├── src/
 │   ├── main/
 │   │   ├── java/                     # Java source files
-│   │   │   └── com/example/          # Main application code
+│   │   │   └── com/kingfisherchat/   # Main application code
 │   │   └── resources/                # Static files and configuration
 │   │       ├── images/               # Static images
 │   │       ├── config.json           # Frontend configuration file
@@ -180,7 +177,7 @@ To compile and run the server:
 
 ```bash
 mvn clean install
-mvn exec:java -Dexec.mainClass="com.example.MojServer"
+mvn exec:java -Dexec.mainClass="com.kingfisherchat.MojServer"
 ```
 
 Make sure your MySQL server is running and the `config.properties` is properly configured.
