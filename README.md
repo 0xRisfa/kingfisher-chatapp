@@ -29,6 +29,7 @@ To run this project, ensure you have the following installed on your system:
 ---
 
 ## 📁 Project Structure
+```
 kingfisher-chat-app/
 ├── .vscode/                # VS Code settings (optional)
 ├── avatars/                # Directory for user profile pictures
@@ -49,6 +50,7 @@ kingfisher-chat-app/
 ├── .env                    # Environment variables for frontend
 ├── pom.xml                 # Maven configuration file
 └── README.md               # Project documentation
+```
 
 ---
 
