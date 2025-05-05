@@ -123,6 +123,7 @@ CREATE DATABASE kingfisher_chat_app;
 #### 🧩 Create the Required Tables
 
 <details> <summary><strong>📄 SQL Schema (Click to expand)</strong></summary>
+  
 ```sql
 CREATE TABLE ZAK_USERS (
     ID INT AUTO_INCREMENT PRIMARY KEY,
@@ -168,8 +169,8 @@ CREATE TABLE ZAK_MESSAGES (
     FOREIGN KEY (CHAT_ID) REFERENCES ZAK_DIRECT_MESSAGES(CHAT_ID) ON DELETE CASCADE,
     FOREIGN KEY (GROUP_ID) REFERENCES ZAK_GROUPS(ID) ON DELETE CASCADE
 );
-</details>
 ```
+</details>
 
 ---
 
