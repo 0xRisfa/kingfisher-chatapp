@@ -130,6 +130,7 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  width: 100%;
 }
 
 /* Placeholder styling */
@@ -148,6 +149,28 @@ body {
 
 .placeholder img {
   height: 100%;
+}
+
+/* Back button for mobile */
+.back-button {
+  display: none;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 10px;
+  font-size: 16px;
+  cursor: pointer;
+  margin-bottom: 10px;
+  border-radius: 5px;
+  text-align: center;
+}
+
+.back-button:hover {
+  background-color: #0056b3;
+}
+
+.back-button.active {
+  display: block; /* Show the back button when active */
 }
 
 /* Chat Box */
@@ -620,5 +643,51 @@ button {
   to {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+/* Ensure the chat-main takes up the full height on mobile */
+@media (max-width: 768px) {
+  .chat-container {
+    flex-direction: column; /* Stack sidebar and chat area vertically */
+  }
+
+  .chat-sidebar {
+    width: 100%;
+    display: block; /* Show the sidebar by default */
+  }
+
+  .chat-main {
+    display: none; /* Hide the chat area by default */
+    flex: 1;
+    flex-direction: column;
+    height: 100%; /* Ensure it takes the full height */
+    overflow: hidden; /* Prevent content overflow */
+  }
+
+  .chat-main.active {
+    display: flex; /* Show the chat area when active */
+  }
+
+  .chat-box {
+    flex: 1;
+    overflow-y: auto; /* Enable scrolling for the chat box */
+  }
+
+  #message-input {
+    display: flex;
+    padding: 10px;
+    background-color: #fff;
+    border-top: 1px solid #ddd;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .back-button {
+    display: none; /* Hide the back button by default */
+  }
+
+  .back-button.active {
+    display: block; /* Show the back button when active */
   }
 }

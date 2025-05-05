@@ -22,16 +22,12 @@
               placeholder="Search for users..."
             />
             <ul id="search-results"></ul>
-            <!-- Add this for search results -->
           </div>
         </div>
-        <!-- Add this button to the sidebar -->
         <button id="create-group-button" class="create-group-button">
           + Create Group
         </button>
-        <ul id="chat-list">
-          <!-- Chat list items will be dynamically added here -->
-        </ul>
+        <ul id="chat-list"></ul>
         <div class="sidebar-footer">
           <img
             id="sidebar-avatar"
@@ -46,14 +42,15 @@
       <!-- Main chat area -->
       <div class="chat-main">
         <div id="username-display"></div>
-        <!-- Placeholder for when no chat is selected -->
+        <button id="back-to-sidebar" class="back-button" style="display: none">
+          ← Back
+        </button>
         <div id="placeholder" class="placeholder">
           <img
             src="/static/images/NoChatSelected.png"
             alt="Start a new conversation"
           />
         </div>
-        <!-- Chat box (hidden by default until a chat is selected) -->
         <div id="chat-box" class="chat-box" style="display: none"></div>
         <div id="message-input" style="display: none">
           <input type="text" id="message" placeholder="Type a message..." />
@@ -84,7 +81,6 @@
               alt="Profile Preview"
             />
           </div>
-          <!-- Add this button below the profile picture preview in the modal -->
           <button type="button" id="remove-profile-pic" class="remove-button">
             Remove Profile Picture
           </button>

@@ -357,6 +357,10 @@ async function showMessage(
   }
 }
 
+const backToSidebarButton = document.getElementById("back-to-sidebar");
+const chatSidebar = document.querySelector(".chat-sidebar");
+const chatMain = document.querySelector(".chat-main");
+
 // Function to handle chat selection
 function selectChat(id, isGroup) {
   // Clear previous chat state
@@ -409,6 +413,15 @@ function selectChat(id, isGroup) {
 
   console.log("Selected chatId:", sessionStorage.getItem("selectedChatId"));
   console.log("Selected groupId:", sessionStorage.getItem("selectedGroupId"));
+
+  // Show the chat area and hide the sidebar on mobile
+  if (window.innerWidth <= 768) {
+    chatSidebar.style.display = "none"; // Hide the sidebar
+    chatMain.style.display = "flex"; // Show the chat area
+    chatMain.classList.add("active"); // Mark chat-main as active
+    backToSidebarButton.style.display = "block";
+    backToSidebarButton.classList.add("active"); // Show the back button
+  }
 
   // Close any existing WebSocket connection
   if (ws) {
@@ -513,6 +526,13 @@ function selectChat(id, isGroup) {
     });
 }
 
+// Back button logic for mobile
+backToSidebarButton.addEventListener("click", () => {
+  chatSidebar.style.display = "block"; // Show the sidebar
+  chatMain.style.display = "none"; // Hide the chat area
+  chatMain.classList.remove("active"); // Remove active class from chat-main
+  backToSidebarButton.classList.remove("active"); // Hide the back button
+});
 const profilePictureCache = {};
 
 async function fetchProfilePicture(username) {
