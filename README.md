@@ -33,7 +33,7 @@ kingfisher-chat-app/
 ├── src/
 │   ├── main/
 │   │   ├── java/                     # Java source files
-│   │   │   └── com/example/          # Main application code
+│   │   │   └── com/kingfisherchat/   # Main application code
 │   │   └── resources/                # Static files and configuration
 │   │       ├── images/               # Static images
 │   │       ├── config.json           # Frontend configuration file
