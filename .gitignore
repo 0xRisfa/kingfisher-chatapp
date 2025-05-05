@@ -1,0 +1,11 @@
+# .gitignore
+.env
+config.properties
+config.json
+keystore.jks
+uploads/
+*.class
+target/
+avatars/
+*.log
+*.iml

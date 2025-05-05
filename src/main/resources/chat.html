@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Direct Messages</title>
+    <link rel="stylesheet" href="/static/chat.css" />
+  </head>
+  <body>
+    <div class="chat-container">
+      <!-- Sidebar for listing DMs -->
+      <div class="chat-sidebar">
+        <div class="search-container">
+          <h2>
+            Chat List
+            <button id="search-toggle" class="search-icon">🔍</button>
+          </h2>
+          <div id="search-bar" class="search-bar" style="display: none">
+            <input
+              type="text"
+              id="user-search"
+              placeholder="Search for users..."
+            />
+            <ul id="search-results"></ul>
+            <!-- Add this for search results -->
+          </div>
+        </div>
+        <!-- Add this button to the sidebar -->
+        <button id="create-group-button" class="create-group-button">
+          + Create Group
+        </button>
+        <ul id="chat-list">
+          <!-- Chat list items will be dynamically added here -->
+        </ul>
+        <div class="sidebar-footer">
+          <img
+            id="sidebar-avatar"
+            src="/static/images/default-avatar.png"
+            alt="User Avatar"
+          />
+          <span id="sidebar-username">Username</span>
+          <button id="profile-settings">⚙️</button>
+        </div>
+      </div>
+
+      <!-- Main chat area -->
+      <div class="chat-main">
+        <div id="username-display"></div>
+        <!-- Placeholder for when no chat is selected -->
+        <div id="placeholder" class="placeholder">
+          <img
+            src="/static/images/NoChatSelected.png"
+            alt="Start a new conversation"
+          />
+        </div>
+        <!-- Chat box (hidden by default until a chat is selected) -->
+        <div id="chat-box" class="chat-box" style="display: none"></div>
+        <div id="message-input" style="display: none">
+          <input type="text" id="message" placeholder="Type a message..." />
+          <input
+            type="file"
+            id="file-input"
+            accept="image/*,video/*"
+            style="display: none"
+          />
+          <button id="media-button">📎</button>
+          <button id="send-button">Send</button>
+        </div>
+        <div id="media-preview" style="display: none; margin-top: 10px"></div>
+      </div>
+    </div>
+
+    <div id="profile-modal" class="modal" style="display: none">
+      <div class="modal-content">
+        <span id="close-modal" class="close-button">&times;</span>
+        <h2>Edit Profile</h2>
+        <form id="profile-form">
+          <div class="form-group">
+            <label for="profile-pic">Profile Picture</label>
+            <input type="file" id="profile-pic" accept="image/*" />
+            <img
+              id="profile-pic-preview"
+              src="/static/images/default-avatar.png"
+              alt="Profile Preview"
+            />
+          </div>
+          <!-- Add this button below the profile picture preview in the modal -->
+          <button type="button" id="remove-profile-pic" class="remove-button">
+            Remove Profile Picture
+          </button>
+          <div class="form-group">
+            <label for="edit-username">Username</label>
+            <input
+              type="text"
+              id="edit-username"
+              placeholder="Enter new username"
+            />
+          </div>
+          <div class="form-group">
+            <label for="old-password">Old Password</label>
+            <input
+              type="password"
+              id="old-password"
+              placeholder="Enter old password"
+            />
+          </div>
+          <div class="form-group">
+            <label for="edit-password">New Password</label>
+            <input
+              type="password"
+              id="edit-password"
+              placeholder="Enter new password"
+            />
+          </div>
+          <div class="form-group">
+            <label for="confirm-password">Confirm New Password</label>
+            <input
+              type="password"
+              id="confirm-password"
+              placeholder="Confirm new password"
+            />
+          </div>
+          <button type="button" id="save-profile">Save Changes</button>
+          <button type="button" id="logout-button" class="logout-button">
+            Log Out
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Image Zoom Modal -->
+    <div id="image-zoom-modal" class="image-zoom-modal" style="display: none">
+      <span id="close-image-zoom" class="image-zoom-close">&times;</span>
+      <img id="zoomed-image" class="image-zoom-content" />
+    </div>
+
+    <!-- Group Chat Creation Modal -->
+    <div id="create-group-modal" class="modal" style="display: none">
+      <div class="modal-content">
+        <span id="close-group-modal" class="close-button">&times;</span>
+        <h2>Create Group Chat</h2>
+        <form id="create-group-form">
+          <div class="form-group">
+            <label for="group-name">Group Name</label>
+            <input
+              type="text"
+              id="group-name"
+              placeholder="Enter group name"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="group-members">Add Members</label>
+            <ul id="group-members-list" class="group-members-list">
+              <!-- User list will be dynamically populated here -->
+            </ul>
+          </div>
+          <button
+            type="button"
+            id="create-group-submit"
+            class="create-group-submit"
+          >
+            Create Group
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <script src="/static/chat.js"></script>
+  </body>
+</html>
