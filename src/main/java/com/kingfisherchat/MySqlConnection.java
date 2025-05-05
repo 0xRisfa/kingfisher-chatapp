@@ -1,4 +1,4 @@
-package com.example;
+package com.kingfisherchat;
 
 import java.sql.Connection;
 import java.sql.DriverManager;

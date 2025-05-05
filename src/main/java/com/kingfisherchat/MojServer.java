@@ -1,4 +1,4 @@
-package com.example;
+package com.kingfisherchat;
 
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;

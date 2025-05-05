@@ -1,4 +1,4 @@
-package com.example;
+package com.kingfisherchat;
 
 import java.io.FileInputStream;
 import java.io.IOException;

@@ -1,4 +1,4 @@
-package com.example;
+package com.kingfisherchat;
 
 import java.sql.*;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
