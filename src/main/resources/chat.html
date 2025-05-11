@@ -10,24 +10,29 @@
     <div class="chat-container">
       <!-- Sidebar for listing DMs -->
       <div class="chat-sidebar">
-        <div class="search-container">
-          <h2>
-            Chat List
-            <button id="search-toggle" class="search-icon">🔍</button>
-          </h2>
-          <div id="search-bar" class="search-bar" style="display: none">
+        <div class="sidebar-actions">
+          <button id="create-group-button" class="create-group-button">
+            + Create Group
+          </button>
+          <div class="search-bar-container">
             <input
               type="text"
               id="user-search"
+              class="sidebar-search"
               placeholder="Search for users..."
+              autocomplete="off"
             />
-            <ul id="search-results"></ul>
+            <button
+              id="search-toggle"
+              class="search-icon"
+              title="Toggle Search"
+            >
+              🔍
+            </button>
+            <ul id="search-results" class="search-results"></ul>
           </div>
         </div>
-        <button id="create-group-button" class="create-group-button">
-          + Create Group
-        </button>
-        <ul id="chat-list"></ul>
+        <ul id="chat-list" class="chat-list"></ul>
         <div class="sidebar-footer">
           <img
             id="sidebar-avatar"
@@ -35,13 +40,12 @@
             alt="User Avatar"
           />
           <span id="sidebar-username">Username</span>
-          <button id="profile-settings">⚙️</button>
+          <button id="profile-settings" title="Profile Settings">⚙️</button>
         </div>
       </div>
 
       <!-- Main chat area -->
       <div class="chat-main">
-        <div id="username-display"></div>
         <button id="back-to-sidebar" class="back-button" style="display: none">
           ← Back
         </button>
@@ -68,58 +72,89 @@
     </div>
 
     <div id="profile-modal" class="modal" style="display: none">
-      <div class="modal-content">
+      <div class="modal-content profile-modal-content">
         <span id="close-modal" class="close-button">&times;</span>
-        <h2>Edit Profile</h2>
+        <div class="profile-tabs">
+          <button class="tab-btn active" id="profile-tab-btn">Profile</button>
+          <button class="tab-btn" id="password-tab-btn">Change Password</button>
+        </div>
         <form id="profile-form">
-          <div class="form-group">
-            <label for="profile-pic">Profile Picture</label>
-            <input type="file" id="profile-pic" accept="image/*" />
-            <img
-              id="profile-pic-preview"
-              src="/static/images/default-avatar.png"
-              alt="Profile Preview"
-            />
+          <div id="profile-tab" class="tab-content active">
+            <div class="profile-pic-section">
+              <label for="profile-pic" class="profile-pic-label">
+                <img
+                  id="profile-pic-preview"
+                  src="/static/images/default-avatar.png"
+                  alt="Profile Preview"
+                />
+                <span class="edit-pic-text">Change Photo</span>
+              </label>
+              <input
+                type="file"
+                id="profile-pic"
+                accept="image/*"
+                style="display: none"
+              />
+              <button
+                type="button"
+                id="remove-profile-pic"
+                class="remove-button"
+              >
+                Remove Photo
+              </button>
+            </div>
+            <div class="form-group">
+              <label for="edit-username">Username</label>
+              <input
+                type="text"
+                id="edit-username"
+                placeholder="Enter new username"
+              />
+            </div>
+            <div class="profile-modal-actions">
+              <button type="button" id="save-profile" class="save-profile-btn">
+                Save Changes
+              </button>
+              <button type="button" id="logout-button" class="logout-button">
+                Log Out
+              </button>
+            </div>
           </div>
-          <button type="button" id="remove-profile-pic" class="remove-button">
-            Remove Profile Picture
-          </button>
-          <div class="form-group">
-            <label for="edit-username">Username</label>
-            <input
-              type="text"
-              id="edit-username"
-              placeholder="Enter new username"
-            />
+          <div id="password-tab" class="tab-content">
+            <div class="form-group">
+              <label for="old-password">Old Password</label>
+              <input
+                type="password"
+                id="old-password"
+                placeholder="Enter old password"
+              />
+            </div>
+            <div class="form-group">
+              <label for="edit-password">New Password</label>
+              <input
+                type="password"
+                id="edit-password"
+                placeholder="Enter new password"
+              />
+            </div>
+            <div class="form-group">
+              <label for="confirm-password">Confirm New Password</label>
+              <input
+                type="password"
+                id="confirm-password"
+                placeholder="Confirm new password"
+              />
+            </div>
+            <div class="profile-modal-actions">
+              <button
+                type="button"
+                id="change-password-btn"
+                class="save-profile-btn"
+              >
+                Change Password
+              </button>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="old-password">Old Password</label>
-            <input
-              type="password"
-              id="old-password"
-              placeholder="Enter old password"
-            />
-          </div>
-          <div class="form-group">
-            <label for="edit-password">New Password</label>
-            <input
-              type="password"
-              id="edit-password"
-              placeholder="Enter new password"
-            />
-          </div>
-          <div class="form-group">
-            <label for="confirm-password">Confirm New Password</label>
-            <input
-              type="password"
-              id="confirm-password"
-              placeholder="Confirm new password"
-            />
-          </div>
-          <button type="button" id="save-profile">Save Changes</button>
-          <button type="button" id="logout-button" class="logout-button">
-            Log Out
-          </button>
         </form>
       </div>
     </div>
@@ -132,7 +167,7 @@
 
     <!-- Group Chat Creation Modal -->
     <div id="create-group-modal" class="modal" style="display: none">
-      <div class="modal-content">
+      <div class="modal-content create-group-modal-content">
         <span id="close-group-modal" class="close-button">&times;</span>
         <h2>Create Group Chat</h2>
         <form id="create-group-form">
@@ -146,18 +181,31 @@
             />
           </div>
           <div class="form-group">
-            <label for="group-members">Add Members</label>
-            <ul id="group-members-list" class="group-members-list">
-              <!-- User list will be dynamically populated here -->
-            </ul>
+            <label for="group-members-search">Add Members</label>
+            <input
+              type="text"
+              id="group-members-search"
+              placeholder="Search for users..."
+              autocomplete="off"
+            />
+            <ul
+              id="group-members-search-results"
+              class="group-members-search-results"
+            ></ul>
           </div>
-          <button
-            type="button"
-            id="create-group-submit"
-            class="create-group-submit"
-          >
-            Create Group
-          </button>
+          <div class="form-group">
+            <label>Added Members</label>
+            <ul id="added-members-list" class="added-members-list"></ul>
+          </div>
+          <div class="create-group-actions">
+            <button
+              type="button"
+              id="create-group-submit"
+              class="create-group-submit"
+            >
+              Create Group
+            </button>
+          </div>
         </form>
       </div>
     </div>

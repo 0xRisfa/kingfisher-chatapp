@@ -13,6 +13,7 @@ if (!userSessionId) {
 }
 
 let ws; // Declare WebSocket globally
+let wsInstanceId = 0; // Track the current WebSocket instance
 const messageInput = document.getElementById("message");
 const chatBox = document.getElementById("chat-box");
 const statusMessage = document.getElementById("status-message");
@@ -209,7 +210,8 @@ async function loadMessages(
           messageType,
           msg.username,
           msg.messageType,
-          true // Prepend older messages
+          true, // Prepend older messages
+          msg.messageId // Pass messageId for deletion
         );
       });
 
@@ -258,7 +260,8 @@ async function showMessage(
   type,
   sender,
   messageType,
-  prepend = false
+  prepend = false,
+  messageId = null // Add messageId for deletion
 ) {
   const messageContainer = document.createElement("div");
   messageContainer.classList.add("message-container", type);
@@ -281,6 +284,7 @@ async function showMessage(
         console.error("Error fetching profile picture:", error);
       });
   }
+
   const messageContent = document.createElement("div");
   messageContent.classList.add("message-content");
 
@@ -339,6 +343,62 @@ async function showMessage(
     messageDiv.textContent = content || "Message content is missing";
   }
 
+  // Add delete functionality for sent messages
+  if (type === "sent") {
+    const menuButton = document.createElement("div");
+    menuButton.classList.add("message-menu");
+    menuButton.textContent = "⋮";
+
+    const deleteMenu = document.createElement("div");
+    deleteMenu.classList.add("delete-menu");
+    deleteMenu.textContent = "Delete Message";
+    deleteMenu.style.display = "none";
+
+    // Show the delete menu when the three-dot menu is clicked
+    menuButton.addEventListener("click", () => {
+      deleteMenu.style.display =
+        deleteMenu.style.display === "none" ? "block" : "none";
+    });
+
+    // Hide the delete menu when clicking outside
+    document.addEventListener("click", (event) => {
+      if (
+        !menuButton.contains(event.target) &&
+        !deleteMenu.contains(event.target)
+      ) {
+        deleteMenu.style.display = "none";
+      }
+    });
+
+    // Handle message deletion
+    deleteMenu.addEventListener("click", async () => {
+      if (confirm("Are you sure you want to delete this message?")) {
+        try {
+          const response = await fetch(`/deleteMessage`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ messageId }),
+          });
+
+          if (response.ok) {
+            messageContainer.remove(); // Remove the message from the chatbox
+            alert("Message deleted successfully.");
+          } else {
+            alert("Failed to delete the message.");
+          }
+        } catch (error) {
+          console.error("Error deleting message:", error);
+          alert("An error occurred while deleting the message.");
+        }
+      }
+    });
+
+    messageContainer.appendChild(menuButton);
+    messageContainer.appendChild(deleteMenu);
+  }
+
   // Append sender name and message to the wrapper
   messageContent.appendChild(senderName);
   messageContent.appendChild(messageDiv);
@@ -362,7 +422,7 @@ const chatSidebar = document.querySelector(".chat-sidebar");
 const chatMain = document.querySelector(".chat-main");
 
 // Function to handle chat selection
-function selectChat(id, isGroup) {
+async function selectChat(id, isGroup) {
   // Clear previous chat state
   sessionStorage.removeItem("selectedChatId");
   sessionStorage.removeItem("selectedGroupId");
@@ -411,6 +471,20 @@ function selectChat(id, isGroup) {
     loadMessages(id, 20, 0, true, false);
   }
 
+  // Mark messages as read
+  try {
+    await fetch("/markMessagesAsRead", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Username: localStorage.getItem("username"),
+      },
+      body: JSON.stringify({ id, isGroup }),
+    });
+  } catch (error) {
+    console.error("Error marking messages as read:", error);
+  }
+
   console.log("Selected chatId:", sessionStorage.getItem("selectedChatId"));
   console.log("Selected groupId:", sessionStorage.getItem("selectedGroupId"));
 
@@ -426,8 +500,13 @@ function selectChat(id, isGroup) {
   // Close any existing WebSocket connection
   if (ws) {
     ws.onmessage = null;
+    ws.onclose = null; // Remove old handler
     ws.close();
   }
+
+  // Increment the instance ID for the new connection
+  wsInstanceId++;
+  const thisWsInstance = wsInstanceId;
 
   // Fetch the WebSocket URL from config.json
   fetch("/config.json")
@@ -439,7 +518,6 @@ function selectChat(id, isGroup) {
     })
     .then((config) => {
       const websocketUrl = config.websocketUrl || "ws://localhost:8081";
-      console.log("Using WebSocket URL:", websocketUrl);
 
       // Establish a new WebSocket connection
       ws = new WebSocket(websocketUrl);
@@ -488,12 +566,14 @@ function selectChat(id, isGroup) {
       };
 
       ws.onclose = (event) => {
-        console.log(
-          "Disconnected from WebSocket server for chat ID:",
-          id,
-          event
-        );
-        showFeedback("Disconnected from WebSocket.", "error");
+        if (thisWsInstance === wsInstanceId) {
+          console.log(
+            "Disconnected from WebSocket server for chat ID:",
+            id,
+            event
+          );
+          showFeedback("Disconnected from WebSocket.", "error");
+        }
       };
 
       ws.onmessage = (event) => {
@@ -511,7 +591,9 @@ function selectChat(id, isGroup) {
               messageData.message,
               messageData.username === username ? "sent" : "received",
               messageData.username,
-              messageData.messageType
+              messageData.messageType,
+              false,
+              messageData.messageId // Pass messageId for deletion
             );
           }
         } catch (error) {
@@ -563,51 +645,40 @@ async function fetchProfilePicture(username) {
 // Function to load chats and populate the sidebar
 async function loadChats() {
   try {
-    // Fetch DMs and group chats from the server
-    const [dmResponse, groupResponse] = await Promise.all([
-      fetch("/loadDirectMessages", {
-        method: "GET",
-        headers: {
-          Username: localStorage.getItem("username"), // Add the Username header
-        },
-      }),
-      fetch("/loadGroupChats", {
-        method: "GET",
-        headers: {
-          Username: localStorage.getItem("username"), // Add the Username header
-        },
-      }),
-    ]);
+    const response = await fetch("/loadChats", {
+      method: "GET",
+      headers: {
+        Username: localStorage.getItem("username"), // Add the Username header
+      },
+    });
 
-    if (dmResponse.ok && groupResponse.ok) {
-      const dms = await dmResponse.json();
-      const groups = await groupResponse.json();
+    if (response.ok) {
+      const chats = await response.json();
 
       const chatList = document.getElementById("chat-list");
       chatList.innerHTML = ""; // Clear previous chats
 
-      // Add DMs to the list
-      dms.forEach((dm) => {
-        const dmItem = document.createElement("li");
-        dmItem.textContent = dm.username; // Display the username
-        dmItem.dataset.chatId = dm.chatId; // Store chat ID for later use
-        dmItem.classList.add("dm-item"); // Add a class for styling
-        dmItem.addEventListener("click", () => {
-          selectChat(dm.chatId, false); // Handle DM selection
-        });
-        chatList.appendChild(dmItem);
-      });
+      // Add chats to the list
+      chats.forEach((chat) => {
+        const chatItem = document.createElement("li");
+        chatItem.textContent = chat.name; // Display the chat name
+        chatItem.dataset.chatId = chat.id; // Store chat ID for DMs
+        chatItem.dataset.chatType = chat.type; // Store chat type ("dm" or "group")
+        chatItem.classList.add(chat.type === "dm" ? "dm-item" : "group-item"); // Add a class for styling
 
-      // Add group chats to the list
-      groups.forEach((group) => {
-        const groupItem = document.createElement("li");
-        groupItem.textContent = group.name; // Display the group name
-        groupItem.dataset.groupId = group.groupId; // Store group ID for later use
-        groupItem.classList.add("group-item"); // Add a class for styling
-        groupItem.addEventListener("click", () => {
-          selectChat(group.groupId, true); // Handle group chat selection
+        // Add unread message count
+        if (chat.unreadCount > 0) {
+          const unreadBadge = document.createElement("span");
+          unreadBadge.classList.add("unread-badge");
+          unreadBadge.textContent = chat.unreadCount; // Display unread count
+          chatItem.appendChild(unreadBadge);
+        }
+
+        chatItem.addEventListener("click", () => {
+          selectChat(chat.id, chat.type === "group"); // Handle chat selection
         });
-        chatList.appendChild(groupItem);
+
+        chatList.appendChild(chatItem);
       });
     } else {
       console.error("Failed to load chats");
@@ -823,8 +894,8 @@ profilePicInput.addEventListener("change", (event) => {
   }
 });
 
-// Save profile changes
-saveProfileButton.addEventListener("click", async () => {
+// Save profile changes or password change
+function handleProfileSaveOrPasswordChange() {
   const newUsername = editUsernameInput.value.trim();
   const oldPassword = document.getElementById("old-password").value.trim();
   const newPassword = editPasswordInput.value.trim();
@@ -833,10 +904,14 @@ saveProfileButton.addEventListener("click", async () => {
     .value.trim();
   const profilePic = profilePicInput.files[0];
 
-  // Validate password fields
-  if (newPassword || confirmPassword || oldPassword) {
+  // If the password tab is active, validate password fields
+  if (passwordTab.classList.contains("active")) {
     if (!oldPassword) {
       alert("Please enter your old password.");
+      return;
+    }
+    if (!newPassword) {
+      alert("Please enter a new password.");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -846,43 +921,54 @@ saveProfileButton.addEventListener("click", async () => {
   }
 
   const formData = new FormData();
-  if (newUsername) formData.append("username", newUsername);
-  if (oldPassword) formData.append("oldPassword", oldPassword);
-  if (newPassword) formData.append("newPassword", newPassword);
-  if (profilePic) formData.append("profilePic", profilePic);
+  if (newUsername && profileTab.classList.contains("active"))
+    formData.append("username", newUsername);
+  if (oldPassword && passwordTab.classList.contains("active"))
+    formData.append("oldPassword", oldPassword);
+  if (newPassword && passwordTab.classList.contains("active"))
+    formData.append("newPassword", newPassword);
+  if (profilePic && profileTab.classList.contains("active"))
+    formData.append("profilePic", profilePic);
 
-  try {
-    const response = await fetch("/updateProfile", {
-      method: "POST",
-      body: formData,
-      headers: {
-        "Session-Id": sessionStorage.getItem("userSessionId"), // Include the Session-Id header
-      },
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.success) {
-        alert("Profile updated successfully!");
-        if (newUsername) {
-          document.getElementById("sidebar-username").textContent = newUsername;
+  fetch("/updateProfile", {
+    method: "POST",
+    body: formData,
+    headers: {
+      "Session-Id": sessionStorage.getItem("userSessionId"),
+    },
+  })
+    .then(async (response) => {
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          alert("Profile updated successfully!");
+          if (newUsername) {
+            document.getElementById("sidebar-username").textContent =
+              newUsername;
+          }
+          if (profilePic) {
+            const avatarUrl = URL.createObjectURL(profilePic);
+            document.getElementById("sidebar-avatar").src = avatarUrl;
+          }
+          profileModal.style.display = "none";
+        } else {
+          alert("Failed to update profile: " + data.error);
         }
-        if (profilePic) {
-          const avatarUrl = URL.createObjectURL(profilePic);
-          document.getElementById("sidebar-avatar").src = avatarUrl;
-        }
-        profileModal.style.display = "none"; // Close the modal
       } else {
-        alert("Failed to update profile: " + data.error);
+        alert("Failed to update profile.");
       }
-    } else {
-      alert("Failed to update profile.");
-    }
-  } catch (error) {
-    console.error("Error updating profile:", error);
-    alert("An error occurred while updating your profile.");
-  }
-});
+    })
+    .catch((error) => {
+      console.error("Error updating profile:", error);
+      alert("An error occurred while updating your profile.");
+    });
+}
+
+// Attach the same handler to both buttons
+saveProfileButton.addEventListener("click", handleProfileSaveOrPasswordChange);
+document
+  .getElementById("change-password-btn")
+  .addEventListener("click", handleProfileSaveOrPasswordChange);
 
 // Log out the user
 logoutButton.addEventListener("click", () => {
@@ -895,59 +981,105 @@ logoutButton.addEventListener("click", () => {
 const createGroupButton = document.getElementById("create-group-button");
 const createGroupModal = document.getElementById("create-group-modal");
 const closeGroupModal = document.getElementById("close-group-modal");
-const groupMembersList = document.getElementById("group-members-list");
+const groupMembersSearch = document.getElementById("group-members-search");
+const groupMembersSearchResults = document.getElementById(
+  "group-members-search-results"
+);
+const addedMembersList = document.getElementById("added-members-list");
 const createGroupSubmit = document.getElementById("create-group-submit");
 
-createGroupButton.addEventListener("click", async () => {
+// Store added members
+const addedMembers = new Set();
+
+// Open the "Create Group" modal
+createGroupButton.addEventListener("click", () => {
   createGroupModal.style.display = "flex";
 
-  // Fetch the list of users to add as members
-  try {
-    const response = await fetch("/searchUsers?q="); // Fetch all users
-    if (response.ok) {
-      const users = await response.json();
-      groupMembersList.innerHTML = ""; // Clear previous list
-
-      users.forEach((user) => {
-        const userItem = document.createElement("li");
-        userItem.textContent = user.username;
-        userItem.dataset.userId = user.id; // Ensure this is set correctly
-        userItem.classList.add("user-item"); // Add a class for styling
-
-        // Add click event listener to toggle the `.selected` class
-        userItem.addEventListener("click", () => {
-          userItem.classList.toggle("selected"); // Toggle the `.selected` class
-          console.log(
-            "User clicked:",
-            userItem.dataset.userId,
-            "Selected:",
-            userItem.classList.contains("selected")
-          );
-        });
-
-        groupMembersList.appendChild(userItem);
-      });
-    } else {
-      console.error("Failed to fetch users.");
-    }
-  } catch (error) {
-    console.error("Error fetching users:", error);
+  // Automatically add the current user to the "added members" list
+  const currentUser = localStorage.getItem("username");
+  if (currentUser && !addedMembers.has(currentUser)) {
+    addMemberToList(currentUser, true); // Automatically add the creator
   }
 });
 
 // Close the modal
 closeGroupModal.addEventListener("click", () => {
   createGroupModal.style.display = "none";
+  groupMembersSearch.value = "";
+  groupMembersSearchResults.innerHTML = "";
+  addedMembersList.innerHTML = "";
+  addedMembers.clear();
 });
+
+// Search for users
+groupMembersSearch.addEventListener("input", async (event) => {
+  const searchTerm = event.target.value.trim();
+
+  if (!searchTerm) {
+    groupMembersSearchResults.innerHTML = ""; // Just clear, don't hide
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/searchUsers?q=${encodeURIComponent(searchTerm)}`
+    );
+    if (response.ok) {
+      const users = await response.json();
+      groupMembersSearchResults.innerHTML = ""; // Clear previous results
+
+      users.forEach((user) => {
+        if (!addedMembers.has(user.username)) {
+          const userItem = document.createElement("li");
+          userItem.textContent = user.username;
+          userItem.addEventListener("click", () => {
+            addMemberToList(user.username, false, user.id);
+            groupMembersSearchResults.innerHTML = ""; // Clear after selection
+            groupMembersSearch.value = "";
+          });
+          groupMembersSearchResults.appendChild(userItem);
+        }
+      });
+    } else {
+      groupMembersSearchResults.innerHTML = "";
+    }
+  } catch (error) {
+    groupMembersSearchResults.innerHTML = "";
+  }
+});
+
+// Add a user to the "added members" list
+function addMemberToList(username, isCreator, userId = null) {
+  addedMembers.add(username);
+
+  const memberItem = document.createElement("li");
+  memberItem.textContent = username;
+
+  if (!isCreator) {
+    const removeButton = document.createElement("button");
+    removeButton.textContent = "Remove";
+    removeButton.classList.add("remove-member");
+
+    // Remove the user from the list when the button is clicked
+    removeButton.addEventListener("click", () => {
+      addedMembers.delete(username);
+      memberItem.remove();
+    });
+
+    memberItem.appendChild(removeButton);
+  } else {
+    memberItem.textContent += " (You)";
+  }
+
+  addedMembersList.appendChild(memberItem);
+}
 
 // Handle group creation
 createGroupSubmit.addEventListener("click", async () => {
   const groupName = document.getElementById("group-name").value.trim();
-  const selectedMembers = Array.from(
-    groupMembersList.querySelectorAll(".selected")
-  )
-    .map((item) => parseInt(item.dataset.userId))
-    .filter((id) => !isNaN(id)); // Filter out invalid or NaN IDs
+  const selectedMembers = Array.from(addedMembers).filter(
+    (username) => username !== localStorage.getItem("username")
+  );
 
   console.log("Selected members:", selectedMembers); // Debug log
 
@@ -957,7 +1089,7 @@ createGroupSubmit.addEventListener("click", async () => {
   }
 
   if (selectedMembers.length === 0) {
-    alert("Please select at least one member.");
+    alert("Please add at least one member.");
     return;
   }
 
@@ -993,7 +1125,7 @@ createGroupSubmit.addEventListener("click", async () => {
       groupItem.addEventListener("click", () => {
         selectChat(data.groupId, true);
       });
-      chatList.appendChild(groupItem);
+      document.getElementById("chat-list").appendChild(groupItem);
 
       // Close the modal
       createGroupModal.style.display = "none";
@@ -1035,4 +1167,24 @@ window.addEventListener("click", (event) => {
   if (event.target === imageZoomModal) {
     imageZoomModal.style.display = "none";
   }
+});
+
+// Functionality for switching between profile and password tabs
+const profileTabBtn = document.getElementById("profile-tab-btn");
+const passwordTabBtn = document.getElementById("password-tab-btn");
+const profileTab = document.getElementById("profile-tab");
+const passwordTab = document.getElementById("password-tab");
+
+profileTabBtn.addEventListener("click", () => {
+  profileTabBtn.classList.add("active");
+  passwordTabBtn.classList.remove("active");
+  profileTab.classList.add("active");
+  passwordTab.classList.remove("active");
+});
+
+passwordTabBtn.addEventListener("click", () => {
+  passwordTabBtn.classList.add("active");
+  profileTabBtn.classList.remove("active");
+  passwordTab.classList.add("active");
+  profileTab.classList.remove("active");
 });

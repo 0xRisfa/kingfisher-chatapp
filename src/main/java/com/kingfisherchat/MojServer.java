@@ -333,7 +333,7 @@ public class MojServer extends WebSocketServer {
         }
     }
 
-    private int getIdfromUsername(String username){
+    private static int getIdfromUsername(String username){
         int userId = -1;
         String getUserIdSql = "SELECT ID FROM ZAK_USERS WHERE USERNAME = ?";
         try (Connection connection = MySqlConnection.getConnection();
@@ -672,7 +672,8 @@ public class MojServer extends WebSocketServer {
                 }
             }
 
-            String sql = "SELECT ZAK_USERS.USERNAME, ZAK_USERS.PROFILE_PICTURE, ZAK_MESSAGES.MESSAGE, ZAK_MESSAGES.MESSAGE_TYPE, ZAK_MESSAGES.TIMESTAMP " +
+            String sql = "SELECT ZAK_MESSAGES.ID AS MESSAGE_ID, ZAK_USERS.USERNAME, ZAK_USERS.PROFILE_PICTURE, " +
+                         "ZAK_MESSAGES.MESSAGE, ZAK_MESSAGES.MESSAGE_TYPE, ZAK_MESSAGES.TIMESTAMP " +
                          "FROM ZAK_MESSAGES " +
                          "INNER JOIN ZAK_USERS ON ZAK_MESSAGES.USER_ID = ZAK_USERS.ID " +
                          "WHERE ZAK_MESSAGES.CHAT_ID = ? " +
@@ -697,6 +698,7 @@ public class MojServer extends WebSocketServer {
                     }
             
                     Map<String, Object> message = new HashMap<>();
+                    message.put("messageId", rs.getInt("MESSAGE_ID")); // Include messageId
                     message.put("username", rs.getString("USERNAME"));
                     message.put("profilePicture", profilePicture);
                     message.put("message", rs.getString("MESSAGE"));
@@ -729,89 +731,7 @@ public class MojServer extends WebSocketServer {
             }
         });
 
-        // Handle loadDirectMessages requests
-        httpsServer.createContext("/loadDirectMessages", exchange -> {
-            try {
-                if (!"GET".equals(exchange.getRequestMethod())) {
-                    exchange.sendResponseHeaders(405, -1); // Method Not Allowed
-                    return;
-                }
-
-                // Retrieve the username from the session or headers
-                String username = exchange.getRequestHeaders().getFirst("Username");
-                if (username == null || username.isEmpty()) {
-                    exchange.sendResponseHeaders(400, -1); // Bad Request
-                    return;
-                }
-
-                // Get the user ID from the database
-                int userId = -1;
-                String getUserIdSql = "SELECT ID FROM ZAK_USERS WHERE USERNAME = ?";
-                try (Connection connection = MySqlConnection.getConnection();
-                     PreparedStatement stmt = connection.prepareStatement(getUserIdSql)) {
-
-                    stmt.setString(1, username);
-                    long startTime = System.currentTimeMillis();
-                    ResultSet rs = stmt.executeQuery();
-                    long endTime = System.currentTimeMillis();
-                    System.out.println("Query execution time: " + (endTime - startTime) + "ms");
-                    if (rs.next()) {
-                        userId = rs.getInt("ID");
-                    } else {
-                        exchange.sendResponseHeaders(404, -1); // User not found
-                        return;
-                    }
-                } catch (SQLException e) {
-                    e.printStackTrace();
-                    exchange.sendResponseHeaders(500, -1); // Internal Server Error
-                    return;
-                }
-
-                // Fetch direct messages for the user
-                String sql = "SELECT chat_id, " +
-                             "CASE WHEN user1_id = ? THEN u2.USERNAME ELSE u1.USERNAME END AS other_user " +
-                             "FROM ZAK_DIRECT_MESSAGES " +
-                             "INNER JOIN ZAK_USERS AS u1 ON ZAK_DIRECT_MESSAGES.user1_id = u1.ID " +
-                             "INNER JOIN ZAK_USERS AS u2 ON ZAK_DIRECT_MESSAGES.user2_id = u2.ID " +
-                             "WHERE user1_id = ? OR user2_id = ?";
-                StringBuilder response = new StringBuilder("[");
-
-                try (Connection connection = MySqlConnection.getConnection();
-                     PreparedStatement stmt = connection.prepareStatement(sql)) {
-
-                    stmt.setInt(1, userId);
-                    stmt.setInt(2, userId);
-                    stmt.setInt(3, userId);
-                    long startTime = System.currentTimeMillis();
-                    ResultSet rs = stmt.executeQuery();
-                    long endTime = System.currentTimeMillis();
-                    System.out.println("Query execution time: " + (endTime - startTime) + "ms");
-
-                    while (rs.next()) {
-                        if (response.length() > 1) response.append(",");
-                        response.append(String.format(
-                            "{\"chatId\": %d, \"username\": \"%s\"}",
-                            rs.getInt("chat_id"),
-                            rs.getString("other_user")
-                        ));
-                    }
-                } catch (SQLException e) {
-                    e.printStackTrace();
-                    exchange.sendResponseHeaders(500, -1); // Internal Server Error
-                    return;
-                }
-
-                response.append("]");
-                exchange.getResponseHeaders().add("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, response.length());
-                exchange.getResponseBody().write(response.toString().getBytes());
-                exchange.getResponseBody().close();
-            } catch (Exception e) {
-                e.printStackTrace();
-                exchange.sendResponseHeaders(500, -1); // Internal Server Error
-            }
-        });
-
+        // Handle loadGroupMessages requests
         httpsServer.createContext("/loadGroupMessages", exchange -> {
             try {
                 if (!"GET".equals(exchange.getRequestMethod())) {
@@ -838,14 +758,14 @@ public class MojServer extends WebSocketServer {
                     }
                 }
 
-                System.out.println("Tralalero tralala, if this has loaded. it tried loading group messages"); // Debug log
                 // Fetch messages for the group
-                String sql = "SELECT ZAK_USERS.USERNAME, ZAK_USERS.PROFILE_PICTURE, ZAK_MESSAGES.MESSAGE, ZAK_MESSAGES.MESSAGE_TYPE, ZAK_MESSAGES.TIMESTAMP " +
-                            "FROM ZAK_MESSAGES " +
-                            "INNER JOIN ZAK_USERS ON ZAK_MESSAGES.USER_ID = ZAK_USERS.ID " +
-                            "WHERE ZAK_MESSAGES.GROUP_ID = ? " +
-                            "ORDER BY ZAK_MESSAGES.TIMESTAMP DESC " +
-                            "LIMIT ? OFFSET ?";
+                String sql = "SELECT ZAK_MESSAGES.ID AS MESSAGE_ID, ZAK_USERS.USERNAME, ZAK_USERS.PROFILE_PICTURE, " +
+                             "ZAK_MESSAGES.MESSAGE, ZAK_MESSAGES.MESSAGE_TYPE, ZAK_MESSAGES.TIMESTAMP " +
+                             "FROM ZAK_MESSAGES " +
+                             "INNER JOIN ZAK_USERS ON ZAK_MESSAGES.USER_ID = ZAK_USERS.ID " +
+                             "WHERE ZAK_MESSAGES.GROUP_ID = ? " +
+                             "ORDER BY ZAK_MESSAGES.TIMESTAMP DESC " +
+                             "LIMIT ? OFFSET ?";
                 List<Map<String, Object>> messages = new ArrayList<>();
 
                 try (Connection connection = MySqlConnection.getConnection();
@@ -863,6 +783,7 @@ public class MojServer extends WebSocketServer {
                         }
 
                         Map<String, Object> message = new HashMap<>();
+                        message.put("messageId", rs.getInt("MESSAGE_ID"));
                         message.put("username", rs.getString("USERNAME"));
                         message.put("profilePicture", profilePicture);
                         message.put("message", rs.getString("MESSAGE"));
@@ -891,7 +812,8 @@ public class MojServer extends WebSocketServer {
             }
         });
 
-        httpsServer.createContext("/loadGroupChats", exchange -> {
+        // Handle loadChats requests
+        httpsServer.createContext("/loadChats", exchange -> {
             try {
                 if (!"GET".equals(exchange.getRequestMethod())) {
                     exchange.sendResponseHeaders(405, -1); // Method Not Allowed
@@ -906,48 +828,92 @@ public class MojServer extends WebSocketServer {
                 }
 
                 // Get the user ID from the database
-                int userId = -1;
-                String getUserIdSql = "SELECT ID FROM ZAK_USERS WHERE USERNAME = ?";
-                try (Connection connection = MySqlConnection.getConnection();
-                     PreparedStatement stmt = connection.prepareStatement(getUserIdSql)) {
+                int userId = getIdfromUsername(username);
 
-                    stmt.setString(1, username);
-                    ResultSet rs = stmt.executeQuery();
-                    if (rs.next()) {
-                        userId = rs.getInt("ID");
-                    } else {
-                        exchange.sendResponseHeaders(404, -1); // User not found
-                        return;
+                // Fetch DMs
+                String dmSql = "SELECT dm.chat_id AS id, " +
+                            "CASE WHEN dm.user1_id = ? THEN u2.USERNAME ELSE u1.USERNAME END AS name, " +
+                            "(SELECT MAX(m.TIMESTAMP) FROM ZAK_MESSAGES m WHERE m.CHAT_ID = dm.chat_id) AS last_message_time, " +
+                            "(SELECT COUNT(*) FROM ZAK_MESSAGES m WHERE m.CHAT_ID = dm.chat_id AND m.USER_ID != ? AND m.IS_READ = FALSE) AS unread_count, " +
+                            "'dm' AS type " +
+                            "FROM ZAK_DIRECT_MESSAGES dm " +
+                            "INNER JOIN ZAK_USERS u1 ON dm.user1_id = u1.ID " +
+                            "INNER JOIN ZAK_USERS u2 ON dm.user2_id = u2.ID " +
+                            "WHERE dm.user1_id = ? OR dm.user2_id = ?";
+
+                // Fetch group chats
+                String groupSql = "SELECT gc.ID AS id, gc.NAME AS name, " +
+                                "(SELECT MAX(m.TIMESTAMP) FROM ZAK_MESSAGES m WHERE m.GROUP_ID = gc.ID) AS last_message_time, " +
+                                "(SELECT COUNT(*) FROM ZAK_MESSAGES m WHERE m.GROUP_ID = gc.ID AND m.USER_ID != ? AND m.IS_READ = FALSE) AS unread_count, " +
+                                "'group' AS type " +
+                                "FROM ZAK_GROUP_CHATS gc " +
+                                "INNER JOIN ZAK_GROUP_MEMBERS gm ON gc.ID = gm.GROUP_ID " +
+                                "WHERE gm.USER_ID = ?";
+
+                List<Map<String, Object>> chats = new ArrayList<>();
+
+                try (Connection connection = MySqlConnection.getConnection()) {
+                    // Fetch DMs
+                    try (PreparedStatement stmt = connection.prepareStatement(dmSql)) {
+                        stmt.setInt(1, userId);
+                        stmt.setInt(2, userId);
+                        stmt.setInt(3, userId);
+                        stmt.setInt(4, userId);
+                        ResultSet rs = stmt.executeQuery();
+
+                        while (rs.next()) {
+                            Map<String, Object> chat = new HashMap<>();
+                            chat.put("id", rs.getInt("id"));
+                            chat.put("name", rs.getString("name"));
+                            chat.put("lastMessageTime", rs.getTimestamp("last_message_time") != null ? rs.getTimestamp("last_message_time").toString() : null);
+                            chat.put("unreadCount", rs.getInt("unread_count")); // Include unread count
+                            chat.put("type", rs.getString("type")); // "dm"
+                            chats.add(chat);
+                        }
+                    }
+
+                    // Fetch group chats
+                    try (PreparedStatement stmt = connection.prepareStatement(groupSql)) {
+                        stmt.setInt(1, userId);
+                        stmt.setInt(2, userId);
+                        ResultSet rs = stmt.executeQuery();
+
+                        while (rs.next()) {
+                            Map<String, Object> chat = new HashMap<>();
+                            chat.put("id", rs.getInt("id"));
+                            chat.put("name", rs.getString("name"));
+                            chat.put("lastMessageTime", rs.getTimestamp("last_message_time") != null ? rs.getTimestamp("last_message_time").toString() : null);
+                            chat.put("unreadCount", rs.getInt("unread_count")); // Include unread count
+                            chat.put("type", rs.getString("type")); // "group"
+                            chats.add(chat);
+                        }
                     }
                 }
 
-                // Fetch group chats for the user
-                String sql = "SELECT GROUP_ID, NAME FROM ZAK_GROUP_CHATS " +
-                             "INNER JOIN ZAK_GROUP_MEMBERS ON ZAK_GROUP_CHATS.ID = ZAK_GROUP_MEMBERS.GROUP_ID " +
-                             "WHERE ZAK_GROUP_MEMBERS.USER_ID = ?";
-                StringBuilder response = new StringBuilder("[");
+                // Sort the combined list by lastMessageTime in descending order
+                chats.sort((c1, c2) -> {
+                    String time1 = (String) c1.get("lastMessageTime");
+                    String time2 = (String) c2.get("lastMessageTime");
+                    if (time1 == null && time2 == null) return 0;
+                    if (time1 == null) return 1;
+                    if (time2 == null) return -1;
+                    return time2.compareTo(time1); // Descending order
+                });
 
-                try (Connection connection = MySqlConnection.getConnection();
-                     PreparedStatement stmt = connection.prepareStatement(sql)) {
+                // Serialize the response to JSON
+                Gson gson = new Gson();
+                String jsonResponse = gson.toJson(chats);
 
-                    stmt.setInt(1, userId);
-                    ResultSet rs = stmt.executeQuery();
-
-                    while (rs.next()) {
-                        if (response.length() > 1) response.append(",");
-                        response.append(String.format(
-                            "{\"groupId\": %d, \"name\": \"%s\"}",
-                            rs.getInt("GROUP_ID"),
-                            rs.getString("NAME")
-                        ));
-                    }
-                }
-
-                response.append("]");
+                // Write the response dynamically
                 exchange.getResponseHeaders().add("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, response.length());
-                exchange.getResponseBody().write(response.toString().getBytes());
-                exchange.getResponseBody().close();
+                exchange.getResponseHeaders().add("Content-Encoding", "gzip");
+                exchange.sendResponseHeaders(200, 0); // Use 0 to dynamically determine the response size
+
+                try (OutputStream os = new GZIPOutputStream(exchange.getResponseBody());
+                    Writer writer = new OutputStreamWriter(os, StandardCharsets.UTF_8)) {
+                    writer.write(jsonResponse);
+                    writer.flush();
+                }
             } catch (Exception e) {
                 e.printStackTrace();
                 exchange.sendResponseHeaders(500, -1); // Internal Server Error
@@ -1399,13 +1365,39 @@ public class MojServer extends WebSocketServer {
                 Gson gson = new Gson();
                 Map<String, Object> requestData = gson.fromJson(requestBody.toString(), Map.class);
                 String groupName = (String) requestData.get("name");
-                List<Double> memberIds = (List<Double>) requestData.get("members"); // Gson parses numbers as Double
+                List<?> rawMemberUsernames = (List<?>) requestData.get("members"); // Use wildcard to handle mixed types
                 int createdBy = getUserIdFromSession(exchange);
         
-                if (groupName == null || memberIds == null || memberIds.isEmpty()) {
+                System.out.println("Group Name: " + groupName); // Debug log
+                System.out.println("Raw Member Usernames: " + rawMemberUsernames); // Debug log
+        
+                if (groupName == null || rawMemberUsernames == null || rawMemberUsernames.isEmpty()) {
                     exchange.sendResponseHeaders(400, -1); // Bad Request
                     return;
                 }
+        
+                // Convert rawMemberUsernames to a list of user IDs
+                List<Integer> memberIds = new ArrayList<>();
+                for (Object rawUsername : rawMemberUsernames) {
+                    try {
+                        int userId = getIdfromUsername(rawUsername.toString());
+                        if (userId != -1) {
+                            memberIds.add(userId);
+                        } else {
+                            System.out.println("Invalid username: " + rawUsername); // Debug log
+                        }
+                    } catch (Exception e) {
+                        System.out.println("Error parsing username: " + rawUsername); // Debug log
+                        e.printStackTrace();
+                    }
+                }
+        
+                // Ensure the creator is added to the group
+                if (!memberIds.contains(createdBy)) {
+                    memberIds.add(createdBy);
+                }
+        
+                System.out.println("Final Member IDs: " + memberIds); // Debug log
         
                 // Insert the group chat into the database
                 String insertGroupSql = "INSERT INTO ZAK_GROUP_CHATS (NAME, CREATED_BY) VALUES (?, ?)";
@@ -1431,9 +1423,9 @@ public class MojServer extends WebSocketServer {
                 try (Connection connection = MySqlConnection.getConnection();
                      PreparedStatement stmt = connection.prepareStatement(insertMembersSql)) {
         
-                    for (Double memberId : memberIds) {
+                    for (Integer memberId : memberIds) {
                         stmt.setInt(1, groupId);
-                        stmt.setInt(2, memberId.intValue()); // Convert Double to Integer
+                        stmt.setInt(2, memberId);
                         stmt.addBatch();
                     }
                     stmt.executeBatch();
@@ -1470,6 +1462,98 @@ public class MojServer extends WebSocketServer {
                 exchange.sendResponseHeaders(200, fileBytes.length);
                 exchange.getResponseBody().write(fileBytes);
                 exchange.getResponseBody().close();
+            } catch (Exception e) {
+                e.printStackTrace();
+                exchange.sendResponseHeaders(500, -1); // Internal Server Error
+            }
+        });
+
+        httpsServer.createContext("/deleteMessage", exchange -> {
+            try {
+                if (!"POST".equals(exchange.getRequestMethod())) {
+                    exchange.sendResponseHeaders(405, -1); // Method Not Allowed
+                    return;
+                }
+
+                BufferedReader reader = new BufferedReader(new InputStreamReader(exchange.getRequestBody()));
+                StringBuilder requestBody = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    requestBody.append(line);
+                }
+
+                System.out.println("Received deleteMessage request: " + requestBody);
+
+                Gson gson = new Gson();
+                Map<String, Object> requestData = gson.fromJson(requestBody.toString(), Map.class);
+
+                // Validate that messageId exists and is not null
+                if (!requestData.containsKey("messageId") || requestData.get("messageId") == null) {
+                    System.out.println("Missing or null messageId in request: " + requestBody); // Debug log
+                    exchange.sendResponseHeaders(400, -1); // Bad Request
+                    return;
+                }
+
+                // Safely parse messageId
+                int messageId;
+                try {
+                    messageId = ((Double) requestData.get("messageId")).intValue(); // Convert to int
+                } catch (ClassCastException | NullPointerException e) {
+                    System.out.println("Invalid messageId format in request: " + requestBody); // Debug log
+                    exchange.sendResponseHeaders(400, -1); // Bad Request
+                    return;
+                }
+
+                // Delete the message from the database
+                String deleteMessageSql = "DELETE FROM ZAK_MESSAGES WHERE ID = ?";
+                try (Connection connection = MySqlConnection.getConnection();
+                    PreparedStatement stmt = connection.prepareStatement(deleteMessageSql)) {
+
+                    stmt.setInt(1, messageId);
+                    int rowsAffected = stmt.executeUpdate();
+
+                    if (rowsAffected > 0) {
+                        exchange.sendResponseHeaders(200, -1); // Success
+                    } else {
+                        exchange.sendResponseHeaders(404, -1); // Not Found
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                exchange.sendResponseHeaders(500, -1); // Internal Server Error
+            }
+        });
+
+        httpsServer.createContext("/markMessagesAsRead", exchange -> {
+            try {
+                if (!"POST".equals(exchange.getRequestMethod())) {
+                    exchange.sendResponseHeaders(405, -1); // Method Not Allowed
+                    return;
+                }
+
+                BufferedReader reader = new BufferedReader(new InputStreamReader(exchange.getRequestBody()));
+                StringBuilder requestBody = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    requestBody.append(line);
+                }
+
+                Gson gson = new Gson();
+                Map<String, Object> requestData = gson.fromJson(requestBody.toString(), Map.class);
+                int id = ((Double) requestData.get("id")).intValue();
+                boolean isGroup = (Boolean) requestData.get("isGroup");
+
+                String sql = isGroup
+                    ? "UPDATE ZAK_MESSAGES SET IS_READ = TRUE WHERE GROUP_ID = ?"
+                    : "UPDATE ZAK_MESSAGES SET IS_READ = TRUE WHERE CHAT_ID = ?";
+
+                try (Connection connection = MySqlConnection.getConnection();
+                    PreparedStatement stmt = connection.prepareStatement(sql)) {
+                    stmt.setInt(1, id);
+                    stmt.executeUpdate();
+                }
+
+                exchange.sendResponseHeaders(200, -1); // Success
             } catch (Exception e) {
                 e.printStackTrace();
                 exchange.sendResponseHeaders(500, -1); // Internal Server Error
