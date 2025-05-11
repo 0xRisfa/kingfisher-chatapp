@@ -205,7 +205,7 @@ Make sure your MySQL server is running and the `config.properties` is properly c
 
 ## 📸 Screenshots
 
-> *(Optional section — add screenshots of your UI here)*
+> Not added yet.
 
 ---
 
