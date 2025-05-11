@@ -88,3 +88,24 @@ a {
 #send-button:hover {
   background-color: #0056b3;
 }
+
+/* Password Strength Bar */
+.strength-bar {
+  height: 8px;
+  width: 0;
+  background: #e53935;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  transition: width 0.3s, background 0.3s;
+}
+
+/* Password Requirements List */
+.requirements-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px 0;
+  font-size: 13px;
+}
+.requirements-list li {
+  margin-bottom: 2px;
+}

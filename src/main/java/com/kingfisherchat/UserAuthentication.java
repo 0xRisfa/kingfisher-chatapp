@@ -7,42 +7,55 @@ public class UserAuthentication {
 
     public static final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
-// User login method
-public static boolean login(String username, String password) {
-    String sqlQuery = "SELECT PASSWORD FROM ZAK_USERS WHERE USERNAME = ?";
-
-    try (Connection connection = MySqlConnection.getConnection();
-         PreparedStatement stmt = connection.prepareStatement(sqlQuery)) {
-
-        stmt.setString(1, username);
-        System.out.println("Executing query for username: " + username); // DEBUG LOG
-
-        ResultSet rs = stmt.executeQuery();
-
-        if (rs.next()) {
-            String storedHash = rs.getString("PASSWORD");
-            System.out.println("Retrieved password hash from DB: " + storedHash); // DEBUG LOG
-
-            System.out.println(encoder.encode(password));
-
-            boolean isMatch = encoder.matches(password, storedHash);
-            System.out.println("Password match result: " + isMatch); // DEBUG LOG
-            
-            return isMatch;
-        } else {
-            System.out.println("User not found: " + username); // DEBUG LOG
-        }
-
-    } catch (SQLException e) {
-        e.printStackTrace();
-        System.out.println("SQL Exception: " + e.getMessage()); // DEBUG LOG
+    public static boolean isPasswordStrong(String password) {
+        if (password == null) return false;
+        return password.length() >= 8 &&
+               password.matches(".*[A-Z].*") &&
+               password.matches(".*[a-z].*") &&
+               password.matches(".*\\d.*") &&
+               password.matches(".*[^A-Za-z0-9].*");
     }
 
-    return false; // User not found or incorrect password
-}
+    // User login method
+    public static boolean login(String username, String password) {
+        String sqlQuery = "SELECT PASSWORD FROM ZAK_USERS WHERE USERNAME = ?";
+
+        try (Connection connection = MySqlConnection.getConnection();
+             PreparedStatement stmt = connection.prepareStatement(sqlQuery)) {
+
+            stmt.setString(1, username);
+            System.out.println("Executing query for username: " + username); // DEBUG LOG
+
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                String storedHash = rs.getString("PASSWORD");
+                System.out.println("Retrieved password hash from DB: " + storedHash); // DEBUG LOG
+
+                System.out.println(encoder.encode(password));
+
+                boolean isMatch = encoder.matches(password, storedHash);
+                System.out.println("Password match result: " + isMatch); // DEBUG LOG
+                
+                return isMatch;
+            } else {
+                System.out.println("User not found: " + username); // DEBUG LOG
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println("SQL Exception: " + e.getMessage()); // DEBUG LOG
+        }
+
+        return false; // User not found or incorrect password
+    }
 
     // User registration method
     public static boolean registerUser(String username, String password) {
+        if (!isPasswordStrong(password)) {
+            return false;
+        }
+
         String hashedPassword = encoder.encode(password); // Hash the password before storing
         String sql = "INSERT INTO ZAK_USERS (USERNAME, PASSWORD) VALUES (?, ?)";
 

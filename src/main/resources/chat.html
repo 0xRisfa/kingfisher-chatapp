@@ -49,6 +49,12 @@
         <button id="back-to-sidebar" class="back-button" style="display: none">
           ← Back
         </button>
+        <div id="group-header" class="group-header" style="display: none">
+          <span id="group-name-display"></span>
+          <button id="group-info-btn" class="group-info-btn" title="Group Info">
+            ℹ️
+          </button>
+        </div>
         <div id="placeholder" class="placeholder">
           <img
             src="/static/images/NoChatSelected.png"
@@ -126,6 +132,7 @@
               <input
                 type="password"
                 id="old-password"
+                class="password-form"
                 placeholder="Enter old password"
               />
             </div>
@@ -134,14 +141,27 @@
               <input
                 type="password"
                 id="edit-password"
+                class="password-form"
                 placeholder="Enter new password"
               />
+              <div
+                id="profile-password-strength-bar"
+                class="strength-bar"
+              ></div>
+              <ul id="profile-password-requirements" class="requirements-list">
+                <li id="profile-req-length">At least 8 characters</li>
+                <li id="profile-req-upper">At least 1 uppercase letter</li>
+                <li id="profile-req-lower">At least 1 lowercase letter</li>
+                <li id="profile-req-digit">At least 1 digit</li>
+                <li id="profile-req-special">At least 1 special character</li>
+              </ul>
             </div>
             <div class="form-group">
               <label for="confirm-password">Confirm New Password</label>
               <input
                 type="password"
                 id="confirm-password"
+                class="password-form"
                 placeholder="Confirm new password"
               />
             </div>
@@ -207,6 +227,35 @@
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Group Info Modal -->
+    <div id="group-info-modal" class="modal" style="display: none">
+      <div class="modal-content group-info-modal-content">
+        <span id="close-group-info-modal" class="close-button">&times;</span>
+        <h2>Group Info</h2>
+        <div>
+          <strong>Members:</strong>
+          <ul id="group-members-list"></ul>
+        </div>
+        <div id="group-owner-actions" style="display: none">
+          <button id="add-member-btn" class="save-profile-btn">
+            Add Member
+          </button>
+          <div id="add-member-section" style="margin-top: 12px; display: none">
+            <input
+              type="text"
+              id="add-member-search"
+              placeholder="Search users..."
+              autocomplete="off"
+            />
+            <ul
+              id="add-member-search-results"
+              class="group-members-search-results"
+            ></ul>
+          </div>
+        </div>
       </div>
     </div>
 

@@ -343,9 +343,6 @@ public class MojServer extends WebSocketServer {
             ResultSet rs = getUserIdStmt.executeQuery();
             if (rs.next()) {
                 userId = rs.getInt("ID");
-                System.out.println("User ID: " + userId);
-            } else {
-                System.out.println("User not found: " + username);
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -834,7 +831,9 @@ public class MojServer extends WebSocketServer {
                 String dmSql = "SELECT dm.chat_id AS id, " +
                             "CASE WHEN dm.user1_id = ? THEN u2.USERNAME ELSE u1.USERNAME END AS name, " +
                             "(SELECT MAX(m.TIMESTAMP) FROM ZAK_MESSAGES m WHERE m.CHAT_ID = dm.chat_id) AS last_message_time, " +
-                            "(SELECT COUNT(*) FROM ZAK_MESSAGES m WHERE m.CHAT_ID = dm.chat_id AND m.USER_ID != ? AND m.IS_READ = FALSE) AS unread_count, " +
+                            "(SELECT COUNT(*) FROM ZAK_MESSAGES m " +
+                            "WHERE m.CHAT_ID = dm.chat_id AND m.USER_ID != ? " +
+                            "AND NOT EXISTS (SELECT 1 FROM ZAK_MESSAGE_READ r WHERE r.MESSAGE_ID = m.ID AND r.USER_ID = ?)) AS unread_count," +
                             "'dm' AS type " +
                             "FROM ZAK_DIRECT_MESSAGES dm " +
                             "INNER JOIN ZAK_USERS u1 ON dm.user1_id = u1.ID " +
@@ -844,7 +843,9 @@ public class MojServer extends WebSocketServer {
                 // Fetch group chats
                 String groupSql = "SELECT gc.ID AS id, gc.NAME AS name, " +
                                 "(SELECT MAX(m.TIMESTAMP) FROM ZAK_MESSAGES m WHERE m.GROUP_ID = gc.ID) AS last_message_time, " +
-                                "(SELECT COUNT(*) FROM ZAK_MESSAGES m WHERE m.GROUP_ID = gc.ID AND m.USER_ID != ? AND m.IS_READ = FALSE) AS unread_count, " +
+                                "(SELECT COUNT(*) FROM ZAK_MESSAGES m " +
+                                "WHERE m.GROUP_ID = gc.ID AND m.USER_ID != ? " +
+                                "AND NOT EXISTS (SELECT 1 FROM ZAK_MESSAGE_READ r WHERE r.MESSAGE_ID = m.ID AND r.USER_ID = ?)) AS unread_count," +
                                 "'group' AS type " +
                                 "FROM ZAK_GROUP_CHATS gc " +
                                 "INNER JOIN ZAK_GROUP_MEMBERS gm ON gc.ID = gm.GROUP_ID " +
@@ -859,6 +860,7 @@ public class MojServer extends WebSocketServer {
                         stmt.setInt(2, userId);
                         stmt.setInt(3, userId);
                         stmt.setInt(4, userId);
+                        stmt.setInt(5, userId);
                         ResultSet rs = stmt.executeQuery();
 
                         while (rs.next()) {
@@ -876,6 +878,7 @@ public class MojServer extends WebSocketServer {
                     try (PreparedStatement stmt = connection.prepareStatement(groupSql)) {
                         stmt.setInt(1, userId);
                         stmt.setInt(2, userId);
+                        stmt.setInt(3, userId);
                         ResultSet rs = stmt.executeQuery();
 
                         while (rs.next()) {
@@ -1233,6 +1236,13 @@ public class MojServer extends WebSocketServer {
         
                 // Validate old password if a new password is provided
                 if (newPassword != null) {
+                    // Enforce password strength
+                    if (!UserAuthentication.isPasswordStrong(newPassword)) {
+                        exchange.sendResponseHeaders(400, -1); // Bad Request
+                        System.out.println("New password does not meet strength requirements.");
+                        return;
+                    }
+
                     String sql = "SELECT PASSWORD FROM ZAK_USERS WHERE ID = ?";
                     try (Connection connection = MySqlConnection.getConnection();
                          PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -1241,7 +1251,7 @@ public class MojServer extends WebSocketServer {
                         ResultSet rs = stmt.executeQuery();
                         if (rs.next()) {
                             String storedPassword = rs.getString("PASSWORD");
-                            if (!UserAuthentication.encoder.matches(oldPassword, storedPassword)) { // Compare hashed passwords
+                            if (!UserAuthentication.encoder.matches(oldPassword, storedPassword)) {
                                 exchange.sendResponseHeaders(400, -1); // Bad Request
                                 System.out.println("Old password is incorrect.");
                                 return;
@@ -1543,13 +1553,18 @@ public class MojServer extends WebSocketServer {
                 int id = ((Double) requestData.get("id")).intValue();
                 boolean isGroup = (Boolean) requestData.get("isGroup");
 
+                // Get user ID from session
+                int userId = getUserIdFromSession(exchange);
+
+                // Insert read records for all messages in this chat/group for this user
                 String sql = isGroup
-                    ? "UPDATE ZAK_MESSAGES SET IS_READ = TRUE WHERE GROUP_ID = ?"
-                    : "UPDATE ZAK_MESSAGES SET IS_READ = TRUE WHERE CHAT_ID = ?";
+                    ? "INSERT IGNORE INTO ZAK_MESSAGE_READ (MESSAGE_ID, USER_ID) SELECT ID, ? FROM ZAK_MESSAGES WHERE GROUP_ID = ?"
+                    : "INSERT IGNORE INTO ZAK_MESSAGE_READ (MESSAGE_ID, USER_ID) SELECT ID, ? FROM ZAK_MESSAGES WHERE CHAT_ID = ?";
 
                 try (Connection connection = MySqlConnection.getConnection();
                     PreparedStatement stmt = connection.prepareStatement(sql)) {
-                    stmt.setInt(1, id);
+                    stmt.setInt(1, userId);
+                    stmt.setInt(2, id);
                     stmt.executeUpdate();
                 }
 
@@ -1559,8 +1574,196 @@ public class MojServer extends WebSocketServer {
                 exchange.sendResponseHeaders(500, -1); // Internal Server Error
             }
         });
+        
+        httpsServer.createContext("/getGroupInfo", exchange -> {
+            try {
+                if (!"GET".equals(exchange.getRequestMethod())) {
+                    exchange.sendResponseHeaders(405, -1);
+                    return;
+                }
+                String query = exchange.getRequestURI().getQuery();
+                int groupId = -1;
+                if (query != null) {
+                    for (String param : query.split("&")) {
+                        String[] keyValue = param.split("=");
+                        if (keyValue.length == 2 && "groupId".equals(keyValue[0])) {
+                            groupId = Integer.parseInt(keyValue[1]);
+                        }
+                    }
+                }
+                if (groupId == -1) {
+                    exchange.sendResponseHeaders(400, -1);
+                    return;
+                }
 
-        httpsServer.setExecutor(Executors.newFixedThreadPool(10)); // Adjust the thread pool size as needed
+                // Get group name and owner
+                String groupSql = "SELECT NAME, CREATED_BY FROM ZAK_GROUP_CHATS WHERE ID = ?";
+                String groupName = null;
+                int ownerId = -1;
+                try (Connection conn = MySqlConnection.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(groupSql)) {
+                    stmt.setInt(1, groupId);
+                    ResultSet rs = stmt.executeQuery();
+                    if (rs.next()) {
+                        groupName = rs.getString("NAME");
+                        ownerId = rs.getInt("CREATED_BY");
+                    }
+                }
+                if (groupName == null) {
+                    exchange.sendResponseHeaders(404, -1);
+                    return;
+                }
+
+                // Get owner username
+                String ownerUsername = null;
+                try (Connection conn = MySqlConnection.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement("SELECT USERNAME FROM ZAK_USERS WHERE ID = ?")) {
+                    stmt.setInt(1, ownerId);
+                    ResultSet rs = stmt.executeQuery();
+                    if (rs.next()) {
+                        ownerUsername = rs.getString("USERNAME");
+                    }
+                }
+
+                // Get members
+                String membersSql = "SELECT U.USERNAME FROM ZAK_GROUP_MEMBERS GM INNER JOIN ZAK_USERS U ON GM.USER_ID = U.ID WHERE GM.GROUP_ID = ?";
+                List<Map<String, String>> members = new ArrayList<>();
+                try (Connection conn = MySqlConnection.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(membersSql)) {
+                    stmt.setInt(1, groupId);
+                    ResultSet rs = stmt.executeQuery();
+                    while (rs.next()) {
+                        Map<String, String> member = new HashMap<>();
+                        member.put("username", rs.getString("USERNAME"));
+                        members.add(member);
+                    }
+                }
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("name", groupName);
+                response.put("owner", ownerUsername);
+                response.put("members", members);
+
+                String json = new com.google.gson.Gson().toJson(response);
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, json.getBytes().length);
+                exchange.getResponseBody().write(json.getBytes());
+                exchange.getResponseBody().close();
+            } catch (Exception e) {
+                e.printStackTrace();
+                exchange.sendResponseHeaders(500, -1);
+            }
+        });
+
+        httpsServer.createContext("/addGroupMember", exchange -> {
+            try {
+                if (!"POST".equals(exchange.getRequestMethod())) {
+                    exchange.sendResponseHeaders(405, -1);
+                    return;
+                }
+                BufferedReader reader = new BufferedReader(new InputStreamReader(exchange.getRequestBody()));
+                StringBuilder requestBody = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    requestBody.append(line);
+                }
+                com.google.gson.Gson gson = new com.google.gson.Gson();
+                Map<String, Object> requestData = gson.fromJson(requestBody.toString(), Map.class);
+                int groupId = ((Double) requestData.get("groupId")).intValue();
+                String username = (String) requestData.get("username");
+
+                // Get session user (must be owner)
+                int sessionUserId = getUserIdFromSession(exchange);
+
+                // Check if session user is group owner
+                String ownerSql = "SELECT CREATED_BY FROM ZAK_GROUP_CHATS WHERE ID = ?";
+                int ownerId = -1;
+                try (Connection conn = MySqlConnection.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(ownerSql)) {
+                    stmt.setInt(1, groupId);
+                    ResultSet rs = stmt.executeQuery();
+                    if (rs.next()) ownerId = rs.getInt("CREATED_BY");
+                }
+                if (sessionUserId != ownerId) {
+                    exchange.sendResponseHeaders(403, -1); // Forbidden
+                    return;
+                }
+
+                // Add member
+                int userId = getIdfromUsername(username);
+                if (userId == -1) {
+                    exchange.sendResponseHeaders(404, -1);
+                    return;
+                }
+                String addSql = "INSERT IGNORE INTO ZAK_GROUP_MEMBERS (GROUP_ID, USER_ID) VALUES (?, ?)";
+                try (Connection conn = MySqlConnection.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(addSql)) {
+                    stmt.setInt(1, groupId);
+                    stmt.setInt(2, userId);
+                    stmt.executeUpdate();
+                }
+                exchange.sendResponseHeaders(200, -1);
+            } catch (Exception e) {
+                e.printStackTrace();
+                exchange.sendResponseHeaders(500, -1);
+            }
+        });
+
+        httpsServer.createContext("/removeGroupMember", exchange -> {
+            try {
+                if (!"POST".equals(exchange.getRequestMethod())) {
+                    exchange.sendResponseHeaders(405, -1);
+                    return;
+                }
+                BufferedReader reader = new BufferedReader(new InputStreamReader(exchange.getRequestBody()));
+                StringBuilder requestBody = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    requestBody.append(line);
+                }
+                com.google.gson.Gson gson = new com.google.gson.Gson();
+                Map<String, Object> requestData = gson.fromJson(requestBody.toString(), Map.class);
+                int groupId = ((Double) requestData.get("groupId")).intValue();
+                String username = (String) requestData.get("username");
+
+                // Get session user (must be owner)
+                int sessionUserId = getUserIdFromSession(exchange);
+
+                // Check if session user is group owner
+                String ownerSql = "SELECT CREATED_BY FROM ZAK_GROUP_CHATS WHERE ID = ?";
+                int ownerId = -1;
+                try (Connection conn = MySqlConnection.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(ownerSql)) {
+                    stmt.setInt(1, groupId);
+                    ResultSet rs = stmt.executeQuery();
+                    if (rs.next()) ownerId = rs.getInt("CREATED_BY");
+                }
+                if (sessionUserId != ownerId) {
+                    exchange.sendResponseHeaders(403, -1); // Forbidden
+                    return;
+                }
+
+                // Remove member
+                int userId = getIdfromUsername(username);
+                if (userId == -1) {
+                    exchange.sendResponseHeaders(404, -1);
+                    return;
+                }
+                String removeSql = "DELETE FROM ZAK_GROUP_MEMBERS WHERE GROUP_ID = ? AND USER_ID = ?";
+                try (Connection conn = MySqlConnection.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(removeSql)) {
+                    stmt.setInt(1, groupId);
+                    stmt.setInt(2, userId);
+                    stmt.executeUpdate();
+                }
+                exchange.sendResponseHeaders(200, -1);
+            } catch (Exception e) {
+                e.printStackTrace();
+                exchange.sendResponseHeaders(500, -1);
+            }
+        });
+
+        httpsServer.setExecutor(Executors.newFixedThreadPool(20)); // Adjust the thread pool size as needed
         httpsServer.start();
         System.out.println("HTTPS Server started at https://localhost:8443");
     }

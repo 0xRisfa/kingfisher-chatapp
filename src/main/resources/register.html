@@ -15,6 +15,14 @@
 
         <label for="password">Password:</label>
         <input type="password" id="password" name="password" required />
+        <div id="password-strength-bar" class="strength-bar"></div>
+        <ul id="password-requirements" class="requirements-list">
+          <li id="req-length">At least 8 characters</li>
+          <li id="req-upper">At least 1 uppercase letter</li>
+          <li id="req-lower">At least 1 lowercase letter</li>
+          <li id="req-digit">At least 1 digit</li>
+          <li id="req-special">At least 1 special character</li>
+        </ul>
 
         <button type="submit">Register</button>
       </form>

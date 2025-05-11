@@ -23,12 +23,6 @@ const mediaButton = document.getElementById("media-button");
 const mediaPreview = document.getElementById("media-preview");
 let selectedFile = null;
 
-// Display the logged-in username
-const usernameDisplay = document.getElementById("username-display");
-if (usernameDisplay) {
-  usernameDisplay.textContent = `Logged in as: ${username}`;
-}
-
 const sidebarAvatar = document.getElementById("sidebar-avatar");
 if (sidebarAvatar) {
   const username = localStorage.getItem("username");
@@ -197,28 +191,77 @@ async function loadMessages(
     if (response.ok) {
       let messages = await response.json();
 
-      // Clear the chatbox if this is the initial load
       if (clearChatBox) {
+        messages.reverse();
         chatBox.innerHTML = "";
-      }
+        let previousTimestamp = null;
+        messages.forEach((msg) => {
+          const currentTimestamp = new Date(msg.timestamp);
+          let showDivider = false;
+          if (
+            !previousTimestamp ||
+            Math.abs(currentTimestamp - previousTimestamp) / 60000 > 30
+          ) {
+            showDivider = true;
+          }
+          if (showDivider) insertDateDivider(currentTimestamp, false);
+          const messageType = msg.username === username ? "sent" : "received";
+          showMessage(
+            msg.message,
+            messageType,
+            msg.username,
+            msg.messageType,
+            false,
+            msg.messageId
+          );
+          previousTimestamp = currentTimestamp;
+        });
+      } else {
+        // Collect message and divider "objects" in an array
+        let previousTimestamp = null;
+        const items = [];
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i];
+          const currentTimestamp = new Date(msg.timestamp);
+          let showDivider = false;
+          if (
+            !previousTimestamp ||
+            Math.abs(previousTimestamp - currentTimestamp) / 60000 > 30
+          ) {
+            showDivider = true;
+          }
+          if (showDivider) {
+            items.push({
+              type: "divider",
+              timestamp: currentTimestamp,
+            });
+          }
+          items.push({
+            type: "message",
+            msg,
+          });
+          previousTimestamp = currentTimestamp;
+        }
 
-      // Append or prepend messages
-      messages.forEach((msg) => {
-        const messageType = msg.username === username ? "sent" : "received";
-        showMessage(
-          msg.message,
-          messageType,
-          msg.username,
-          msg.messageType,
-          true, // Prepend older messages
-          msg.messageId // Pass messageId for deletion
-        );
-      });
-
-      // Scroll to the bottom if this is the first load
-      if (clearChatBox) {
-        chatBox.scrollTop = chatBox.scrollHeight;
+        // Now reverse and render
+        items.reverse().forEach((item) => {
+          if (item.type === "divider") {
+            insertDateDivider(item.timestamp, true); // prepend=true is fine, since we're going in order now
+          } else if (item.type === "message") {
+            const msg = item.msg;
+            const messageType = msg.username === username ? "sent" : "received";
+            showMessage(
+              msg.message,
+              messageType,
+              msg.username,
+              msg.messageType,
+              true,
+              msg.messageId
+            );
+          }
+        });
       }
+      console.log(messages.map((m) => m.messageId || m.timestamp));
     } else {
       console.error(
         `Failed to load messages for ${isGroup ? "group" : "chat"}:`,
@@ -420,6 +463,76 @@ async function showMessage(
 const backToSidebarButton = document.getElementById("back-to-sidebar");
 const chatSidebar = document.querySelector(".chat-sidebar");
 const chatMain = document.querySelector(".chat-main");
+const groupHeader = document.getElementById("group-header");
+const groupNameDisplay = document.getElementById("group-name-display");
+const groupInfoBtn = document.getElementById("group-info-btn");
+const groupInfoModal = document.getElementById("group-info-modal");
+const closeGroupInfoModal = document.getElementById("close-group-info-modal");
+const groupMembersList = document.getElementById("group-members-list");
+const groupOwnerActions = document.getElementById("group-owner-actions");
+const addMemberBtn = document.getElementById("add-member-btn");
+
+let currentGroupId = null;
+let isGroupOwner = false;
+
+// Elements
+const addMemberSection = document.getElementById("add-member-section");
+const addMemberSearch = document.getElementById("add-member-search");
+const addMemberSearchResults = document.getElementById(
+  "add-member-search-results"
+);
+
+// Show add member UI when owner clicks "Add Member"
+addMemberBtn.addEventListener("click", () => {
+  addMemberSection.style.display = "block";
+  addMemberSearch.value = "";
+  addMemberSearchResults.innerHTML = "";
+  addMemberSearch.focus();
+});
+
+// Search users as you type
+addMemberSearch.addEventListener("input", async (event) => {
+  const searchTerm = event.target.value.trim();
+  if (!searchTerm) {
+    addMemberSearchResults.innerHTML = "";
+    return;
+  }
+  const response = await fetch(
+    `/searchUsers?q=${encodeURIComponent(searchTerm)}`
+  );
+  if (response.ok) {
+    const users = await response.json();
+    addMemberSearchResults.innerHTML = "";
+    users.forEach((user) => {
+      // Don't show users already in the group
+      if (
+        [...groupMembersList.children].some((li) =>
+          li.textContent.trim().startsWith(user.username)
+        )
+      )
+        return;
+      const li = document.createElement("li");
+      li.textContent = user.username;
+      li.addEventListener("click", async () => {
+        // Add member via backend
+        await fetch("/addGroupMember", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Session-Id": sessionStorage.getItem("userSessionId"),
+          },
+          body: JSON.stringify({
+            groupId: currentGroupId,
+            username: user.username,
+          }),
+        });
+        await renderGroupMembers(); // Refresh list after adding
+        addMemberSection.style.display = "none";
+      });
+      addMemberSearchResults.appendChild(li);
+    });
+  }
+});
 
 // Function to handle chat selection
 async function selectChat(id, isGroup) {
@@ -433,12 +546,10 @@ async function selectChat(id, isGroup) {
 
     // Find the group name of the chat
     const chatItem = document.querySelector(`[data-group-id="${id}"]`);
-    const groupName = chatItem ? chatItem.textContent : "Unknown Group";
-
-    // Update the username display
-    const usernameDisplay = document.getElementById("username-display");
-    if (usernameDisplay) {
-      usernameDisplay.textContent = `Chatting with: ${groupName}`;
+    let groupName = "Unknown Group";
+    if (chatItem) {
+      // If the group name is followed by an unread badge, exclude it
+      groupName = chatItem.childNodes[0].nodeValue.trim();
     }
 
     // Hide the placeholder and show the chat box and input area
@@ -448,19 +559,20 @@ async function selectChat(id, isGroup) {
 
     // Load group messages
     loadMessages(id, 20, 0, true, true);
+
+    groupHeader.style.display = "flex";
+    groupNameDisplay.textContent = groupName;
+    currentGroupId = id;
+
+    // Optionally, check if current user is group owner
+    const response = await fetch(`/getGroupInfo?groupId=${id}`);
+    if (response.ok) {
+      const data = await response.json();
+      isGroupOwner = data.owner === localStorage.getItem("username");
+    }
   } else {
     sessionStorage.setItem("selectedChatId", id); // Store the selected chat ID in sessionStorage
     console.log("Selected chat ID:", id);
-
-    // Find the username of the person you're chatting with
-    const chatItem = document.querySelector(`[data-chat-id="${id}"]`);
-    const chattingWith = chatItem ? chatItem.textContent : "Unknown User";
-
-    // Update the username display
-    const usernameDisplay = document.getElementById("username-display");
-    if (usernameDisplay) {
-      usernameDisplay.textContent = `Chatting with: ${chattingWith}`;
-    }
 
     // Hide the placeholder and show the chat box and input area
     document.getElementById("placeholder").style.display = "none";
@@ -469,6 +581,10 @@ async function selectChat(id, isGroup) {
 
     // Load the first 20 messages for the selected chat
     loadMessages(id, 20, 0, true, false);
+
+    groupHeader.style.display = "none";
+    currentGroupId = null;
+    isGroupOwner = false;
   }
 
   // Mark messages as read
@@ -477,7 +593,7 @@ async function selectChat(id, isGroup) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Username: localStorage.getItem("username"),
+        "Session-Id": sessionStorage.getItem("userSessionId"), // <-- Add this line
       },
       body: JSON.stringify({ id, isGroup }),
     });
@@ -615,6 +731,22 @@ backToSidebarButton.addEventListener("click", () => {
   chatMain.classList.remove("active"); // Remove active class from chat-main
   backToSidebarButton.classList.remove("active"); // Hide the back button
 });
+
+// Open group info modal
+groupInfoBtn.addEventListener("click", async () => {
+  if (!currentGroupId) return;
+  groupInfoModal.style.display = "flex";
+  await renderGroupMembers();
+});
+
+// Close modal
+closeGroupInfoModal.addEventListener("click", () => {
+  groupInfoModal.style.display = "none";
+});
+window.addEventListener("click", (event) => {
+  if (event.target === groupInfoModal) groupInfoModal.style.display = "none";
+});
+
 const profilePictureCache = {};
 
 async function fetchProfilePicture(username) {
@@ -663,6 +795,7 @@ async function loadChats() {
         const chatItem = document.createElement("li");
         chatItem.textContent = chat.name; // Display the chat name
         chatItem.dataset.chatId = chat.id; // Store chat ID for DMs
+        chatItem.dataset.groupId = chat.id; // For groups
         chatItem.dataset.chatType = chat.type; // Store chat type ("dm" or "group")
         chatItem.classList.add(chat.type === "dm" ? "dm-item" : "group-item"); // Add a class for styling
 
@@ -698,7 +831,8 @@ chatBox.addEventListener("scroll", () => {
   if (chatBox.scrollTop === 0) {
     const chatId = sessionStorage.getItem("selectedChatId");
     const groupId = sessionStorage.getItem("selectedGroupId");
-    const currentMessageCount = chatBox.children.length;
+    const currentMessageCount =
+      chatBox.querySelectorAll(".message-container").length;
 
     if (groupId) {
       // Load older messages for a group chat
@@ -1081,17 +1215,17 @@ createGroupSubmit.addEventListener("click", async () => {
     (username) => username !== localStorage.getItem("username")
   );
 
-  console.log("Selected members:", selectedMembers); // Debug log
-
+  // Require at least 2 other members (3 total including creator)
   if (!groupName) {
     alert("Please enter a group name.");
     return;
   }
-
-  if (selectedMembers.length === 0) {
-    alert("Please add at least one member.");
+  if (selectedMembers.length < 2) {
+    alert("Please add at least two other members (minimum 3 total).");
     return;
   }
+
+  console.log("Selected members:", selectedMembers); // Debug log
 
   try {
     const sessionId = sessionStorage.getItem("userSessionId"); // Retrieve the session ID
@@ -1188,3 +1322,104 @@ passwordTabBtn.addEventListener("click", () => {
   passwordTab.classList.add("active");
   profileTab.classList.remove("active");
 });
+
+const profilePasswordInput = document.getElementById("edit-password");
+const profileStrengthBar = document.getElementById(
+  "profile-password-strength-bar"
+);
+const profileReqLength = document.getElementById("profile-req-length");
+const profileReqUpper = document.getElementById("profile-req-upper");
+const profileReqLower = document.getElementById("profile-req-lower");
+const profileReqDigit = document.getElementById("profile-req-digit");
+const profileReqSpecial = document.getElementById("profile-req-special");
+
+if (profilePasswordInput) {
+  profilePasswordInput.addEventListener("input", function () {
+    const value = profilePasswordInput.value;
+    let strength = 0;
+
+    // Check requirements
+    const lengthOK = value.length >= 8;
+    const upperOK = /[A-Z]/.test(value);
+    const lowerOK = /[a-z]/.test(value);
+    const digitOK = /\d/.test(value);
+    const specialOK = /[^A-Za-z0-9]/.test(value);
+
+    // Update requirements list
+    profileReqLength.style.color = lengthOK ? "green" : "red";
+    profileReqUpper.style.color = upperOK ? "green" : "red";
+    profileReqLower.style.color = lowerOK ? "green" : "red";
+    profileReqDigit.style.color = digitOK ? "green" : "red";
+    profileReqSpecial.style.color = specialOK ? "green" : "red";
+
+    // Calculate strength
+    strength += lengthOK ? 1 : 0;
+    strength += upperOK ? 1 : 0;
+    strength += lowerOK ? 1 : 0;
+    strength += digitOK ? 1 : 0;
+    strength += specialOK ? 1 : 0;
+
+    // Update strength bar
+    const colors = ["#e53935", "#ff9800", "#fbc02d", "#43a047", "#388e3c"];
+    profileStrengthBar.style.width = strength * 20 + "%";
+    profileStrengthBar.style.background = colors[strength - 1] || "#e53935";
+  });
+}
+
+// Function to render group members
+async function renderGroupMembers() {
+  if (!currentGroupId) return;
+  const response = await fetch(`/getGroupInfo?groupId=${currentGroupId}`);
+  if (response.ok) {
+    const data = await response.json();
+    groupMembersList.innerHTML = "";
+    data.members.forEach((member) => {
+      const li = document.createElement("li");
+      li.textContent = member.username;
+      if (
+        isGroupOwner &&
+        member.username !== localStorage.getItem("username")
+      ) {
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = "Remove";
+        removeBtn.className = "remove-member-btn";
+        removeBtn.onclick = async () => {
+          await fetch("/removeGroupMember", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Session-Id": sessionStorage.getItem("userSessionId"),
+            },
+            body: JSON.stringify({
+              groupId: currentGroupId,
+              username: member.username,
+            }),
+          });
+          renderGroupMembers(); // Refresh after removal
+        };
+        li.appendChild(removeBtn);
+      }
+      groupMembersList.appendChild(li);
+    });
+    groupOwnerActions.style.display = isGroupOwner ? "block" : "none";
+  }
+}
+
+// Function to insert a date divider in the chatbox
+function insertDateDivider(dateObj, prepend = false) {
+  const divider = document.createElement("div");
+  divider.className = "date-divider";
+  divider.textContent = dateObj
+    .toLocaleString("en-US", {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    .replace(",", " -");
+  if (prepend) {
+    chatBox.insertBefore(divider, chatBox.firstChild);
+  } else {
+    chatBox.appendChild(divider);
+  }
+}
