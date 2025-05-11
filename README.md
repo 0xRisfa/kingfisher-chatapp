@@ -75,10 +75,6 @@ db.password=your_database_password
 # Keystore Configuration
 keystore.path=keystore.jks
 keystore.password=your_keystore_password
-
-# WebSocket and API Endpoints
-websocket.url=wss://your-websocket-url
-api.base.url=https://your-api-url
 ```
 
 > 📝 Be sure to replace placeholder values with your actual credentials and URLs.
