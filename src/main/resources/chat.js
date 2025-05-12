@@ -1,8 +1,40 @@
-// Ensure user is authenticated and assign unique session ID to each tab
+// chat.js
+
+// General DOM elements
+const backToSidebarButton = document.getElementById("back-to-sidebar");
+const chatSidebar = document.querySelector(".chat-sidebar");
+const chatMain = document.querySelector(".chat-main");
+const groupHeader = document.getElementById("group-header");
+const groupNameDisplay = document.getElementById("group-name-display");
+const groupInfoBtn = document.getElementById("group-info-btn");
+const groupInfoModal = document.getElementById("group-info-modal");
+const closeGroupInfoModal = document.getElementById("close-group-info-modal");
+const groupMembersList = document.getElementById("group-members-list");
+const groupOwnerActions = document.getElementById("group-owner-actions");
+const addMemberBtn = document.getElementById("add-member-btn");
+const addMemberSection = document.getElementById("add-member-section");
+const addMemberSearch = document.getElementById("add-member-search");
+const addMemberSearchResults = document.getElementById(
+  "add-member-search-results"
+);
+
+/*
+-
+-
+-
+-
+-
+-
+*/
+
+// Authentication and session management
+
+// Check if user is authenticated and redirect to login page if not
 if (!localStorage.getItem("isAuthenticated")) {
   window.location.href = "index.html"; // Redirect if not authenticated
 }
 
+// Ensure user is authenticated and assign unique session ID to each tab
 const username = localStorage.getItem("username");
 const userSessionId = sessionStorage.getItem("userSessionId");
 if (!userSessionId) {
@@ -12,8 +44,26 @@ if (!userSessionId) {
   sessionStorage.setItem("userSessionId", userSessionId); // Save session ID
 }
 
-let ws; // Declare WebSocket globally
-let wsInstanceId = 0; // Track the current WebSocket instance
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
+
+// WEBSOCKET AND CHAT FUNCTIONALITY
+
+let ws;
+let wsInstanceId = 0;
 const messageInput = document.getElementById("message");
 const chatBox = document.getElementById("chat-box");
 const statusMessage = document.getElementById("status-message");
@@ -23,57 +73,213 @@ const mediaButton = document.getElementById("media-button");
 const mediaPreview = document.getElementById("media-preview");
 let selectedFile = null;
 
-const sidebarAvatar = document.getElementById("sidebar-avatar");
-if (sidebarAvatar) {
-  const username = localStorage.getItem("username");
-  fetch(`/getProfilePicture?username=${encodeURIComponent(username)}`)
-    .then((response) => response.json())
-    .then((data) => {
-      sidebarAvatar.src =
-        data.profilePicture || "/static/avatars/default-avatar.png";
+// Function to handle chat selection
+async function selectChat(id, isGroup) {
+  // Clear previous chat state
+  sessionStorage.removeItem("selectedChatId");
+  sessionStorage.removeItem("selectedGroupId");
+
+  if (isGroup) {
+    sessionStorage.setItem("selectedGroupId", id); // Store the selected group ID
+    console.log("Selected group ID:", id);
+
+    // Find the group name of the chat
+    const chatItem = document.querySelector(`[data-group-id="${id}"]`);
+    let groupName = "Unknown Group";
+    if (chatItem) {
+      // If the group name is followed by an unread badge, exclude it
+      groupName = chatItem.childNodes[0].nodeValue.trim();
+    }
+
+    // Hide the placeholder and show the chat box and input area
+    document.getElementById("placeholder").style.display = "none";
+    document.getElementById("chat-box").style.display = "block";
+    document.getElementById("message-input").style.display = "flex";
+
+    // Load group messages
+    loadMessages(id, 20, 0, true, true);
+
+    groupHeader.style.display = "flex";
+    groupNameDisplay.textContent = groupName;
+    currentGroupId = id;
+
+    // Optionally, check if current user is group owner
+    const response = await fetch(`/getGroupInfo?groupId=${id}`);
+    if (response.ok) {
+      const data = await response.json();
+      isGroupOwner = data.owner === localStorage.getItem("username");
+    }
+  } else {
+    sessionStorage.setItem("selectedChatId", id); // Store the selected chat ID in sessionStorage
+    console.log("Selected chat ID:", id);
+
+    // Hide the placeholder and show the chat box and input area
+    document.getElementById("placeholder").style.display = "none";
+    document.getElementById("chat-box").style.display = "block";
+    document.getElementById("message-input").style.display = "flex";
+
+    // Load the first 20 messages for the selected chat
+    loadMessages(id, 20, 0, true, false);
+
+    groupHeader.style.display = "none";
+    currentGroupId = null;
+    isGroupOwner = false;
+  }
+
+  // Mark messages as read
+  try {
+    await fetch("/markMessagesAsRead", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Session-Id": sessionStorage.getItem("userSessionId"), // <-- Add this line
+      },
+      body: JSON.stringify({ id, isGroup }),
+    });
+  } catch (error) {
+    console.error("Error marking messages as read:", error);
+  }
+
+  console.log("Selected chatId:", sessionStorage.getItem("selectedChatId"));
+  console.log("Selected groupId:", sessionStorage.getItem("selectedGroupId"));
+
+  // Show the chat area and hide the sidebar on mobile
+  if (window.innerWidth <= 768) {
+    chatSidebar.style.display = "none"; // Hide the sidebar
+    chatMain.style.display = "flex"; // Show the chat area
+    chatMain.classList.add("active"); // Mark chat-main as active
+    backToSidebarButton.style.display = "block";
+    backToSidebarButton.classList.add("active"); // Show the back button
+  }
+
+  // Close any existing WebSocket connection
+  if (ws) {
+    ws.onmessage = null;
+    ws.onclose = null; // Remove old handler
+    ws.close();
+  }
+
+  // Increment the instance ID for the new connection
+  wsInstanceId++;
+  const thisWsInstance = wsInstanceId;
+
+  // Fetch the WebSocket URL from config.json
+  fetch("/config.json")
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("Failed to load configuration");
+      }
+      return response.json();
+    })
+    .then((config) => {
+      const websocketUrl = config.websocketUrl || "ws://localhost:8081";
+
+      // Establish a new WebSocket connection
+      ws = new WebSocket(websocketUrl);
+
+      ws.onopen = () => {
+        console.log("Connected to WebSocket server for chat ID:", id);
+
+        // Send authentication message
+        const sessionId = sessionStorage.getItem("userSessionId");
+        console.log(
+          "Sending authentication message with sessionId:",
+          sessionId
+        );
+        ws.send(
+          JSON.stringify({
+            type: "authenticate",
+            sessionId: sessionId,
+            username: localStorage.getItem("username"),
+          })
+        );
+
+        // Send chat selection message
+
+        const messageData = {
+          type: "selectChat",
+          sessionId: sessionId,
+          username: localStorage.getItem("username"),
+        };
+
+        if (isGroup) {
+          console.log("Sending selectChat message with groupId:", id);
+          messageData.groupId = id; // Set groupId for group chats
+        } else {
+          console.log("Sending selectChat message with chatId:", id);
+          messageData.chatId = id; // Set chatId for DMs
+        }
+
+        console.log("Sending selectChat message:", messageData);
+
+        ws.send(JSON.stringify(messageData));
+      };
+
+      ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        showFeedback("WebSocket connection error.", "error");
+      };
+
+      ws.onclose = (event) => {
+        if (thisWsInstance === wsInstanceId) {
+          console.log(
+            "Disconnected from WebSocket server for chat ID:",
+            id,
+            event
+          );
+          showFeedback("Disconnected from WebSocket.", "error");
+        }
+      };
+
+      ws.onmessage = (event) => {
+        if (!event.data) {
+          console.error("Received empty message");
+          showFeedback("Received empty message.", "error");
+          return;
+        }
+
+        try {
+          const messageData = JSON.parse(event.data);
+
+          if (messageData.type === "message") {
+            showMessage(
+              messageData.message,
+              messageData.username === username ? "sent" : "received",
+              messageData.username,
+              messageData.messageType,
+              false,
+              messageData.messageId
+            );
+          }
+        } catch (error) {
+          console.error("Error parsing message:", error);
+          showFeedback("Error receiving message.", "error");
+        }
+      };
     })
     .catch((error) => {
-      console.error("Error fetching profile picture:", error);
-      sidebarAvatar.src = "/static/avatars/default-avatar.png"; // Fallback to default avatar
+      console.error("Error loading configuration:", error);
+      showFeedback("Failed to load configuration.", "error");
     });
 }
 
-let isWebSocketOpen = false;
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
 
-// Open file explorer when the media button is clicked
-mediaButton.addEventListener("click", () => {
-  fileInput.click();
-});
-
-// Handle file selection
-fileInput.addEventListener("change", (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  selectedFile = file;
-
-  // Clear previous preview
-  mediaPreview.innerHTML = "";
-  mediaPreview.style.display = "block";
-
-  // Create a preview for the selected file
-  const fileType = file.type.split("/")[0];
-  if (fileType === "image") {
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(file);
-    img.style.maxWidth = "200px";
-    img.style.maxHeight = "200px";
-    mediaPreview.appendChild(img);
-  } else if (fileType === "video") {
-    const video = document.createElement("video");
-    video.src = URL.createObjectURL(file);
-    video.controls = true;
-    video.style.maxWidth = "200px";
-    video.style.maxHeight = "200px";
-    video.preload = "metadata"; // Load metadata for the video
-    mediaPreview.appendChild(video);
-  }
-});
+// MESSAGE SENDING AND RECIEVING LOGIC
 
 // Handle send button click
 document.getElementById("send-button").addEventListener("click", async () => {
@@ -153,16 +359,46 @@ function sendMessage(content, type = "text") {
   ws.send(JSON.stringify(message));
 }
 
-let isLoadingMessages = false; // Flag to track if messages are being loaded
+// Handle Enter key press to send a message
+messageInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    document.getElementById("send-button").click();
+  }
+});
+
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
+
+// MESSAGE LOADING
+
+// No chat selected by default
+document.addEventListener("DOMContentLoaded", () => {
+  localStorage.removeItem("selectedChatId");
+  loadChats();
+});
 
 // Function to load messages for a specific DM or group chat
-// Supports pagination with limit and offset
+let isLoadingMessages = false; // Flag to track if messages are being loaded
 async function loadMessages(
   id,
   limit = 20,
   offset = 0,
   clearChatBox = false,
-  isGroup // Add a flag to differentiate between DMs and group chats
+  isGroup // Flag to differentiate between DMs and group chats
 ) {
   if (isLoadingMessages) {
     console.log(
@@ -174,7 +410,7 @@ async function loadMessages(
   isLoadingMessages = true; // Set the flag to true
 
   try {
-    // Determine the endpoint based on whether it's a group chat or DM
+    // Determine the endpoint if it's a group chat or DM
     const endpoint = isGroup ? "/loadGroupMessages" : "/loadMessages";
     console.log(
       `${endpoint}?${
@@ -278,26 +514,27 @@ async function loadMessages(
   }
 }
 
-// Function to show feedback messages (WebSocket errors, etc.)
-function showFeedback(message, type) {
-  const feedbackMessage = document.createElement("div");
-  feedbackMessage.textContent = message;
-  feedbackMessage.style.padding = "10px";
-  feedbackMessage.style.margin = "5px 0";
-  feedbackMessage.style.borderRadius = "5px";
-  feedbackMessage.style.color = "#fff";
+// Load older messages when the user scrolls to the top of the chat box
+chatBox.addEventListener("scroll", () => {
+  if (chatBox.scrollTop === 0) {
+    const chatId = sessionStorage.getItem("selectedChatId");
+    const groupId = sessionStorage.getItem("selectedGroupId");
+    const currentMessageCount =
+      chatBox.querySelectorAll(".message-container").length;
 
-  if (type === "success") {
-    feedbackMessage.style.backgroundColor = "#28a745"; // Green for success
-  } else {
-    feedbackMessage.style.backgroundColor = "#dc3545"; // Red for error
+    if (groupId) {
+      // Load older messages for a group chat
+      loadMessages(groupId, 20, currentMessageCount, false, true);
+    } else if (chatId) {
+      // Load older messages for a DM
+      loadMessages(chatId, 20, currentMessageCount, false, false);
+    } else {
+      console.error("No chat or group selected.");
+    }
   }
+});
 
-  chatBox.appendChild(feedbackMessage);
-  chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to the bottom
-}
-
-// Function to show user messages in the chatbox with usernames
+// Function to show messages in the chat box
 async function showMessage(
   content,
   type,
@@ -442,7 +679,7 @@ async function showMessage(
     messageContainer.appendChild(deleteMenu);
   }
 
-  // Append sender name and message to the wrapper
+  // Append sender name and message to wrapper div
   messageContent.appendChild(senderName);
   messageContent.appendChild(messageDiv);
 
@@ -456,31 +693,190 @@ async function showMessage(
   }
 
   if (!prepend) {
-    chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to the bottom
+    chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to the bottom for the first load
   }
 }
 
-const backToSidebarButton = document.getElementById("back-to-sidebar");
-const chatSidebar = document.querySelector(".chat-sidebar");
-const chatMain = document.querySelector(".chat-main");
-const groupHeader = document.getElementById("group-header");
-const groupNameDisplay = document.getElementById("group-name-display");
-const groupInfoBtn = document.getElementById("group-info-btn");
-const groupInfoModal = document.getElementById("group-info-modal");
-const closeGroupInfoModal = document.getElementById("close-group-info-modal");
-const groupMembersList = document.getElementById("group-members-list");
-const groupOwnerActions = document.getElementById("group-owner-actions");
-const addMemberBtn = document.getElementById("add-member-btn");
+// Function to insert a date divider in the chatbox
+function insertDateDivider(dateObj, prepend = false) {
+  const divider = document.createElement("div");
+  divider.className = "date-divider";
+  divider.textContent = dateObj
+    .toLocaleString("en-US", {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    .replace(",", " -");
+  if (prepend) {
+    chatBox.insertBefore(divider, chatBox.firstChild);
+  } else {
+    chatBox.appendChild(divider);
+  }
+}
+
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
+
+// CHAT LIST AND SIDEBAR FUNCTIONALITY
+
+// Function to load chats and populate the sidebar
+async function loadChats() {
+  try {
+    const response = await fetch("/loadChats", {
+      method: "GET",
+      headers: {
+        Username: localStorage.getItem("username"), // Add the Username header
+      },
+    });
+
+    if (response.ok) {
+      const chats = await response.json();
+
+      const chatList = document.getElementById("chat-list");
+      chatList.innerHTML = ""; // Clear previous chats
+
+      // Add chats to the list
+      chats.forEach((chat) => {
+        const chatItem = document.createElement("li");
+        chatItem.textContent = chat.name; // Display the chat name
+        chatItem.dataset.chatId = chat.id; // Store chat ID for DMs
+        chatItem.dataset.groupId = chat.id; // For groups
+        chatItem.dataset.chatType = chat.type; // Store chat type ("dm" or "group")
+        chatItem.classList.add(chat.type === "dm" ? "dm-item" : "group-item"); // Add a class for styling
+
+        // Add unread message count
+        if (chat.unreadCount > 0) {
+          const unreadBadge = document.createElement("span");
+          unreadBadge.classList.add("unread-badge");
+          unreadBadge.textContent = chat.unreadCount; // Display unread count
+          chatItem.appendChild(unreadBadge);
+        }
+
+        chatItem.addEventListener("click", () => {
+          selectChat(chat.id, chat.type === "group"); // Handle chat selection
+        });
+
+        chatList.appendChild(chatItem);
+      });
+    } else {
+      console.error("Failed to load chats");
+    }
+  } catch (error) {
+    console.error("Error loading chats:", error);
+  }
+}
+
+// Load the user's profile picture in the sidebar footer
+const sidebarAvatar = document.getElementById("sidebar-avatar");
+if (sidebarAvatar) {
+  const username = localStorage.getItem("username");
+  fetch(`/getProfilePicture?username=${encodeURIComponent(username)}`)
+    .then((response) => response.json())
+    .then((data) => {
+      sidebarAvatar.src =
+        data.profilePicture || "/static/avatars/default-avatar.png";
+    })
+    .catch((error) => {
+      console.error("Error fetching profile picture:", error);
+      sidebarAvatar.src = "/static/avatars/default-avatar.png"; // Fallback to default avatar
+    });
+}
+
+// Load the logged-in username in the sidebar footer
+const sidebarUsername = document.getElementById("sidebar-username");
+if (sidebarUsername) {
+  sidebarUsername.textContent = username;
+}
+
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
+
+// GROUP INFO AND MEMBER MANAGEMENT
 
 let currentGroupId = null;
 let isGroupOwner = false;
 
-// Elements
-const addMemberSection = document.getElementById("add-member-section");
-const addMemberSearch = document.getElementById("add-member-search");
-const addMemberSearchResults = document.getElementById(
-  "add-member-search-results"
-);
+// Open group info modal
+groupInfoBtn.addEventListener("click", async () => {
+  if (!currentGroupId) return;
+  groupInfoModal.style.display = "flex";
+  await renderGroupMembers();
+});
+
+// Close group info modal
+closeGroupInfoModal.addEventListener("click", () => {
+  groupInfoModal.style.display = "none";
+});
+window.addEventListener("click", (event) => {
+  if (event.target === groupInfoModal) groupInfoModal.style.display = "none";
+});
+
+// Function to render group members
+async function renderGroupMembers() {
+  if (!currentGroupId) return;
+  const response = await fetch(`/getGroupInfo?groupId=${currentGroupId}`);
+  if (response.ok) {
+    const data = await response.json();
+    groupMembersList.innerHTML = "";
+    data.members.forEach((member) => {
+      const li = document.createElement("li");
+      li.textContent = member.username;
+      if (
+        isGroupOwner &&
+        member.username !== localStorage.getItem("username")
+      ) {
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = "Remove";
+        removeBtn.className = "remove-member-btn";
+        removeBtn.onclick = async () => {
+          await fetch("/removeGroupMember", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Session-Id": sessionStorage.getItem("userSessionId"),
+            },
+            body: JSON.stringify({
+              groupId: currentGroupId,
+              username: member.username,
+            }),
+          });
+          renderGroupMembers(); // Refresh after removal
+        };
+        li.appendChild(removeBtn);
+      }
+      groupMembersList.appendChild(li);
+    });
+    groupOwnerActions.style.display = isGroupOwner ? "block" : "none";
+  }
+}
 
 // Show add member UI when owner clicks "Add Member"
 addMemberBtn.addEventListener("click", () => {
@@ -534,584 +930,24 @@ addMemberSearch.addEventListener("input", async (event) => {
   }
 });
 
-// Function to handle chat selection
-async function selectChat(id, isGroup) {
-  // Clear previous chat state
-  sessionStorage.removeItem("selectedChatId");
-  sessionStorage.removeItem("selectedGroupId");
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
+
+// GROUP CREATION LOGIC
 
-  if (isGroup) {
-    sessionStorage.setItem("selectedGroupId", id); // Store the selected group ID
-    console.log("Selected group ID:", id);
-
-    // Find the group name of the chat
-    const chatItem = document.querySelector(`[data-group-id="${id}"]`);
-    let groupName = "Unknown Group";
-    if (chatItem) {
-      // If the group name is followed by an unread badge, exclude it
-      groupName = chatItem.childNodes[0].nodeValue.trim();
-    }
-
-    // Hide the placeholder and show the chat box and input area
-    document.getElementById("placeholder").style.display = "none";
-    document.getElementById("chat-box").style.display = "block";
-    document.getElementById("message-input").style.display = "flex";
-
-    // Load group messages
-    loadMessages(id, 20, 0, true, true);
-
-    groupHeader.style.display = "flex";
-    groupNameDisplay.textContent = groupName;
-    currentGroupId = id;
-
-    // Optionally, check if current user is group owner
-    const response = await fetch(`/getGroupInfo?groupId=${id}`);
-    if (response.ok) {
-      const data = await response.json();
-      isGroupOwner = data.owner === localStorage.getItem("username");
-    }
-  } else {
-    sessionStorage.setItem("selectedChatId", id); // Store the selected chat ID in sessionStorage
-    console.log("Selected chat ID:", id);
-
-    // Hide the placeholder and show the chat box and input area
-    document.getElementById("placeholder").style.display = "none";
-    document.getElementById("chat-box").style.display = "block";
-    document.getElementById("message-input").style.display = "flex";
-
-    // Load the first 20 messages for the selected chat
-    loadMessages(id, 20, 0, true, false);
-
-    groupHeader.style.display = "none";
-    currentGroupId = null;
-    isGroupOwner = false;
-  }
-
-  // Mark messages as read
-  try {
-    await fetch("/markMessagesAsRead", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Session-Id": sessionStorage.getItem("userSessionId"), // <-- Add this line
-      },
-      body: JSON.stringify({ id, isGroup }),
-    });
-  } catch (error) {
-    console.error("Error marking messages as read:", error);
-  }
-
-  console.log("Selected chatId:", sessionStorage.getItem("selectedChatId"));
-  console.log("Selected groupId:", sessionStorage.getItem("selectedGroupId"));
-
-  // Show the chat area and hide the sidebar on mobile
-  if (window.innerWidth <= 768) {
-    chatSidebar.style.display = "none"; // Hide the sidebar
-    chatMain.style.display = "flex"; // Show the chat area
-    chatMain.classList.add("active"); // Mark chat-main as active
-    backToSidebarButton.style.display = "block";
-    backToSidebarButton.classList.add("active"); // Show the back button
-  }
-
-  // Close any existing WebSocket connection
-  if (ws) {
-    ws.onmessage = null;
-    ws.onclose = null; // Remove old handler
-    ws.close();
-  }
-
-  // Increment the instance ID for the new connection
-  wsInstanceId++;
-  const thisWsInstance = wsInstanceId;
-
-  // Fetch the WebSocket URL from config.json
-  fetch("/config.json")
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error("Failed to load configuration");
-      }
-      return response.json();
-    })
-    .then((config) => {
-      const websocketUrl = config.websocketUrl || "ws://localhost:8081";
-
-      // Establish a new WebSocket connection
-      ws = new WebSocket(websocketUrl);
-
-      ws.onopen = () => {
-        console.log("Connected to WebSocket server for chat ID:", id);
-
-        // Send authentication message
-        const sessionId = sessionStorage.getItem("userSessionId");
-        console.log(
-          "Sending authentication message with sessionId:",
-          sessionId
-        );
-        ws.send(
-          JSON.stringify({
-            type: "authenticate",
-            sessionId: sessionId,
-            username: localStorage.getItem("username"),
-          })
-        );
-
-        // Send chat selection message
-
-        const messageData = {
-          type: "selectChat",
-          sessionId: sessionId,
-          username: localStorage.getItem("username"),
-        };
-
-        if (isGroup) {
-          console.log("Sending selectChat message with groupId:", id);
-          messageData.groupId = id; // Set groupId for group chats
-        } else {
-          console.log("Sending selectChat message with chatId:", id);
-          messageData.chatId = id; // Set chatId for DMs
-        }
-
-        console.log("Sending selectChat message:", messageData);
-        // Send the selectChat message to the WebSocket server
-        ws.send(JSON.stringify(messageData));
-      };
-
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        showFeedback("WebSocket connection error.", "error");
-      };
-
-      ws.onclose = (event) => {
-        if (thisWsInstance === wsInstanceId) {
-          console.log(
-            "Disconnected from WebSocket server for chat ID:",
-            id,
-            event
-          );
-          showFeedback("Disconnected from WebSocket.", "error");
-        }
-      };
-
-      ws.onmessage = (event) => {
-        if (!event.data) {
-          console.error("Received empty message");
-          showFeedback("Received empty message.", "error");
-          return;
-        }
-
-        try {
-          const messageData = JSON.parse(event.data);
-
-          if (messageData.type === "message") {
-            showMessage(
-              messageData.message,
-              messageData.username === username ? "sent" : "received",
-              messageData.username,
-              messageData.messageType,
-              false,
-              messageData.messageId // Pass messageId for deletion
-            );
-          }
-        } catch (error) {
-          console.error("Error parsing message:", error);
-          showFeedback("Error receiving message.", "error");
-        }
-      };
-    })
-    .catch((error) => {
-      console.error("Error loading configuration:", error);
-      showFeedback("Failed to load configuration.", "error");
-    });
-}
-
-// Back button logic for mobile
-backToSidebarButton.addEventListener("click", () => {
-  chatSidebar.style.display = "block"; // Show the sidebar
-  chatMain.style.display = "none"; // Hide the chat area
-  chatMain.classList.remove("active"); // Remove active class from chat-main
-  backToSidebarButton.classList.remove("active"); // Hide the back button
-});
-
-// Open group info modal
-groupInfoBtn.addEventListener("click", async () => {
-  if (!currentGroupId) return;
-  groupInfoModal.style.display = "flex";
-  await renderGroupMembers();
-});
-
-// Close modal
-closeGroupInfoModal.addEventListener("click", () => {
-  groupInfoModal.style.display = "none";
-});
-window.addEventListener("click", (event) => {
-  if (event.target === groupInfoModal) groupInfoModal.style.display = "none";
-});
-
-const profilePictureCache = {};
-
-async function fetchProfilePicture(username) {
-  if (profilePictureCache[username]) {
-    return profilePictureCache[username];
-  }
-
-  try {
-    const response = await fetch(
-      `/getProfilePicture?username=${encodeURIComponent(username)}`
-    );
-    if (response.ok) {
-      const data = await response.json();
-      const profilePicture =
-        data.profilePicture || "/static/avatars/default-avatar.png";
-      profilePictureCache[username] = profilePicture; // Cache the result
-      return profilePicture;
-    } else {
-      console.error("Failed to fetch profile picture for user:", username);
-      return "/static/avatars/default-avatar.png"; // Fallback to default avatar
-    }
-  } catch (error) {
-    console.error("Error fetching profile picture:", error);
-    return "/static/avatars/default-avatar.png"; // Fallback to default avatar
-  }
-}
-
-// Function to load chats and populate the sidebar
-async function loadChats() {
-  try {
-    const response = await fetch("/loadChats", {
-      method: "GET",
-      headers: {
-        Username: localStorage.getItem("username"), // Add the Username header
-      },
-    });
-
-    if (response.ok) {
-      const chats = await response.json();
-
-      const chatList = document.getElementById("chat-list");
-      chatList.innerHTML = ""; // Clear previous chats
-
-      // Add chats to the list
-      chats.forEach((chat) => {
-        const chatItem = document.createElement("li");
-        chatItem.textContent = chat.name; // Display the chat name
-        chatItem.dataset.chatId = chat.id; // Store chat ID for DMs
-        chatItem.dataset.groupId = chat.id; // For groups
-        chatItem.dataset.chatType = chat.type; // Store chat type ("dm" or "group")
-        chatItem.classList.add(chat.type === "dm" ? "dm-item" : "group-item"); // Add a class for styling
-
-        // Add unread message count
-        if (chat.unreadCount > 0) {
-          const unreadBadge = document.createElement("span");
-          unreadBadge.classList.add("unread-badge");
-          unreadBadge.textContent = chat.unreadCount; // Display unread count
-          chatItem.appendChild(unreadBadge);
-        }
-
-        chatItem.addEventListener("click", () => {
-          selectChat(chat.id, chat.type === "group"); // Handle chat selection
-        });
-
-        chatList.appendChild(chatItem);
-      });
-    } else {
-      console.error("Failed to load chats");
-    }
-  } catch (error) {
-    console.error("Error loading chats:", error);
-  }
-}
-
-// Ensure no chat is selected by default
-document.addEventListener("DOMContentLoaded", () => {
-  localStorage.removeItem("selectedChatId"); // Clear any previously selected chat
-  loadChats();
-});
-
-chatBox.addEventListener("scroll", () => {
-  if (chatBox.scrollTop === 0) {
-    const chatId = sessionStorage.getItem("selectedChatId");
-    const groupId = sessionStorage.getItem("selectedGroupId");
-    const currentMessageCount =
-      chatBox.querySelectorAll(".message-container").length;
-
-    if (groupId) {
-      // Load older messages for a group chat
-      loadMessages(groupId, 20, currentMessageCount, false, true);
-    } else if (chatId) {
-      // Load older messages for a DM
-      loadMessages(chatId, 20, currentMessageCount, false, false);
-    } else {
-      console.error("No chat or group selected.");
-    }
-  }
-});
-
-const userSearchInput = document.getElementById("user-search");
-const searchResults = document.getElementById("search-results");
-
-userSearchInput.addEventListener("input", async (event) => {
-  const searchTerm = event.target.value.trim();
-
-  if (!searchTerm) {
-    if (searchResults) {
-      searchResults.style.display = "none";
-      searchResults.innerHTML = "";
-    }
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      `/searchUsers?q=${encodeURIComponent(searchTerm)}`
-    );
-    if (response.ok) {
-      const users = await response.json();
-      if (searchResults) {
-        searchResults.innerHTML = ""; // Clear previous results
-        searchResults.style.display = "block";
-
-        users.forEach((user) => {
-          const userItem = document.createElement("li");
-          userItem.textContent = user.username;
-          userItem.addEventListener("click", () => {
-            startNewChat(user.username);
-            searchResults.style.display = "none"; // Hide results after selection
-          });
-          searchResults.appendChild(userItem);
-        });
-      }
-    } else {
-      console.error("Failed to search for users");
-    }
-  } catch (error) {
-    console.error("Error searching for users:", error);
-  }
-});
-
-// Function to start a new chat
-async function startNewChat(otherUsername) {
-  try {
-    const response = await fetch("/startChat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        username: localStorage.getItem("username"),
-        otherUsername,
-      }),
-    });
-
-    if (response.ok) {
-      const chatData = await response.json();
-      const chatId = chatData.chatId;
-
-      // Add the new chat to the sidebar
-      const chatItem = document.createElement("li");
-      chatItem.textContent = otherUsername;
-      chatItem.dataset.chatId = chatId;
-      chatItem.addEventListener("click", () => {
-        selectChat(chatId);
-      });
-      chatList.appendChild(chatItem);
-
-      // Select the new chat
-      selectChat(chatId);
-    } else {
-      console.error("Failed to start a new chat");
-    }
-  } catch (error) {
-    console.error("Error starting a new chat:", error);
-  }
-}
-
-const searchToggle = document.getElementById("search-toggle");
-const searchBar = document.getElementById("search-bar");
-
-searchToggle.addEventListener("click", () => {
-  if (searchBar.style.display === "none") {
-    searchBar.style.display = "block";
-  } else {
-    searchBar.style.display = "none";
-  }
-});
-
-const sidebarUsername = document.getElementById("sidebar-username");
-if (sidebarUsername) {
-  sidebarUsername.textContent = username; // Set the logged-in username
-}
-
-// Get modal elements
-const profileModal = document.getElementById("profile-modal");
-const closeModal = document.getElementById("close-modal");
-const profileSettingsButton = document.getElementById("profile-settings");
-const saveProfileButton = document.getElementById("save-profile");
-const logoutButton = document.getElementById("logout-button");
-const profilePicInput = document.getElementById("profile-pic");
-const profilePicPreview = document.getElementById("profile-pic-preview");
-const editUsernameInput = document.getElementById("edit-username");
-const editPasswordInput = document.getElementById("edit-password");
-const removeProfilePicButton = document.getElementById("remove-profile-pic");
-
-removeProfilePicButton.addEventListener("click", async () => {
-  const confirmRemoval = confirm(
-    "Are you sure you want to remove your profile picture?"
-  );
-  if (!confirmRemoval) return;
-
-  const formData = new FormData();
-  formData.append("removeProfilePic", "true"); // Add the removeProfilePic field
-
-  try {
-    const response = await fetch("/updateProfile", {
-      method: "POST",
-      headers: {
-        "Session-Id": sessionStorage.getItem("userSessionId"), // Include the Session-Id header
-      },
-      body: formData, // Send the form data
-    });
-
-    if (response.ok) {
-      alert("Profile picture removed successfully!");
-      profilePicPreview.src = "/static/avatars/default-avatar.png"; // Reset to default avatar
-      sidebarAvatar.src = "/static/avatars/default-avatar.png"; // Update the sidebar avatar
-    } else {
-      alert("Failed to remove profile picture.");
-    }
-  } catch (error) {
-    console.error("Error removing profile picture:", error);
-    alert("An error occurred while removing your profile picture.");
-  }
-});
-
-// Open the modal when the gear icon is clicked
-profileSettingsButton.addEventListener("click", async () => {
-  profileModal.style.display = "flex";
-
-  // Fetch and display the current profile picture
-  const username = localStorage.getItem("username");
-  try {
-    const response = await fetch(
-      `/getProfilePicture?username=${encodeURIComponent(username)}`
-    );
-    if (response.ok) {
-      const data = await response.json();
-      profilePicPreview.src =
-        data.profilePicture || "/static/avatars/default-avatar.png";
-    } else {
-      console.error("Failed to fetch profile picture.");
-      profilePicPreview.src = "/static/avatars/default-avatar.png"; // Fallback to default avatar
-    }
-  } catch (error) {
-    console.error("Error fetching profile picture:", error);
-    profilePicPreview.src = "/static/avatars/default-avatar.png"; // Fallback to default avatar
-  }
-});
-
-// Close the modal when the close button is clicked
-closeModal.addEventListener("click", () => {
-  profileModal.style.display = "none";
-});
-
-// Close the modal when clicking outside the modal content
-window.addEventListener("click", (event) => {
-  if (event.target === profileModal) {
-    profileModal.style.display = "none";
-  }
-});
-
-// Preview the selected profile picture
-profilePicInput.addEventListener("change", (event) => {
-  const file = event.target.files[0];
-  if (file) {
-    profilePicPreview.src = URL.createObjectURL(file);
-  }
-});
-
-// Save profile changes or password change
-function handleProfileSaveOrPasswordChange() {
-  const newUsername = editUsernameInput.value.trim();
-  const oldPassword = document.getElementById("old-password").value.trim();
-  const newPassword = editPasswordInput.value.trim();
-  const confirmPassword = document
-    .getElementById("confirm-password")
-    .value.trim();
-  const profilePic = profilePicInput.files[0];
-
-  // If the password tab is active, validate password fields
-  if (passwordTab.classList.contains("active")) {
-    if (!oldPassword) {
-      alert("Please enter your old password.");
-      return;
-    }
-    if (!newPassword) {
-      alert("Please enter a new password.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      alert("New password and confirmation do not match.");
-      return;
-    }
-  }
-
-  const formData = new FormData();
-  if (newUsername && profileTab.classList.contains("active"))
-    formData.append("username", newUsername);
-  if (oldPassword && passwordTab.classList.contains("active"))
-    formData.append("oldPassword", oldPassword);
-  if (newPassword && passwordTab.classList.contains("active"))
-    formData.append("newPassword", newPassword);
-  if (profilePic && profileTab.classList.contains("active"))
-    formData.append("profilePic", profilePic);
-
-  fetch("/updateProfile", {
-    method: "POST",
-    body: formData,
-    headers: {
-      "Session-Id": sessionStorage.getItem("userSessionId"),
-    },
-  })
-    .then(async (response) => {
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          alert("Profile updated successfully!");
-          if (newUsername) {
-            document.getElementById("sidebar-username").textContent =
-              newUsername;
-          }
-          if (profilePic) {
-            const avatarUrl = URL.createObjectURL(profilePic);
-            document.getElementById("sidebar-avatar").src = avatarUrl;
-          }
-          profileModal.style.display = "none";
-        } else {
-          alert("Failed to update profile: " + data.error);
-        }
-      } else {
-        alert("Failed to update profile.");
-      }
-    })
-    .catch((error) => {
-      console.error("Error updating profile:", error);
-      alert("An error occurred while updating your profile.");
-    });
-}
-
-// Attach the same handler to both buttons
-saveProfileButton.addEventListener("click", handleProfileSaveOrPasswordChange);
-document
-  .getElementById("change-password-btn")
-  .addEventListener("click", handleProfileSaveOrPasswordChange);
-
-// Log out the user
-logoutButton.addEventListener("click", () => {
-  localStorage.clear();
-  sessionStorage.clear();
-  window.location.href = "index.html"; // Redirect to login page
-});
-
-// Open the "Create Group" modal
 const createGroupButton = document.getElementById("create-group-button");
 const createGroupModal = document.getElementById("create-group-modal");
 const closeGroupModal = document.getElementById("close-group-modal");
@@ -1272,11 +1108,415 @@ createGroupSubmit.addEventListener("click", async () => {
   }
 });
 
-// Handle Enter key press to send a message
-messageInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault(); // Prevent default behavior (e.g., adding a new line)
-    document.getElementById("send-button").click(); // Trigger the send button click
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
+
+// USER SEARCH AND NEW CHAT CREATION
+
+const userSearchInput = document.getElementById("user-search");
+const searchResults = document.getElementById("search-results");
+
+userSearchInput.addEventListener("input", async (event) => {
+  const searchTerm = event.target.value.trim();
+
+  if (!searchTerm) {
+    if (searchResults) {
+      searchResults.style.display = "none";
+      searchResults.innerHTML = "";
+    }
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/searchUsers?q=${encodeURIComponent(searchTerm)}`
+    );
+    if (response.ok) {
+      const users = await response.json();
+      if (searchResults) {
+        searchResults.innerHTML = ""; // Clear previous results
+        searchResults.style.display = "block";
+
+        users.forEach((user) => {
+          const userItem = document.createElement("li");
+          userItem.textContent = user.username;
+          userItem.addEventListener("click", () => {
+            startNewChat(user.username);
+            searchResults.style.display = "none"; // Hide results after selection
+          });
+          searchResults.appendChild(userItem);
+        });
+      }
+    } else {
+      console.error("Failed to search for users");
+    }
+  } catch (error) {
+    console.error("Error searching for users:", error);
+  }
+});
+
+// Function to start a new chat
+async function startNewChat(otherUsername) {
+  try {
+    const response = await fetch("/startChat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        username: localStorage.getItem("username"),
+        otherUsername,
+      }),
+    });
+
+    if (response.ok) {
+      const chatData = await response.json();
+      const chatId = chatData.chatId;
+
+      // Add the new chat to the sidebar
+      const chatItem = document.createElement("li");
+      chatItem.textContent = otherUsername;
+      chatItem.dataset.chatId = chatId;
+      chatItem.addEventListener("click", () => {
+        selectChat(chatId);
+      });
+      chatList.appendChild(chatItem);
+
+      // Select the new chat
+      selectChat(chatId);
+    } else {
+      console.error("Failed to start a new chat");
+    }
+  } catch (error) {
+    console.error("Error starting a new chat:", error);
+  }
+}
+
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
+
+// PROFILE AND SETTINGS
+
+// Get modal elements
+const profileModal = document.getElementById("profile-modal");
+const closeModal = document.getElementById("close-modal");
+const profileSettingsButton = document.getElementById("profile-settings");
+const saveProfileButton = document.getElementById("save-profile");
+const logoutButton = document.getElementById("logout-button");
+const profilePicInput = document.getElementById("profile-pic");
+const profilePicPreview = document.getElementById("profile-pic-preview");
+const editUsernameInput = document.getElementById("edit-username");
+const editPasswordInput = document.getElementById("edit-password");
+const removeProfilePicButton = document.getElementById("remove-profile-pic");
+
+// Open the modal when the gear icon is clicked
+profileSettingsButton.addEventListener("click", async () => {
+  profileModal.style.display = "flex";
+
+  // Fetch and display the current profile picture
+  const username = localStorage.getItem("username");
+  try {
+    const response = await fetch(
+      `/getProfilePicture?username=${encodeURIComponent(username)}`
+    );
+    if (response.ok) {
+      const data = await response.json();
+      profilePicPreview.src =
+        data.profilePicture || "/static/avatars/default-avatar.png";
+    } else {
+      console.error("Failed to fetch profile picture.");
+      profilePicPreview.src = "/static/avatars/default-avatar.png"; // Fallback to default avatar
+    }
+  } catch (error) {
+    console.error("Error fetching profile picture:", error);
+    profilePicPreview.src = "/static/avatars/default-avatar.png"; // Fallback to default avatar
+  }
+});
+
+// Close the modal when the close button is clicked
+closeModal.addEventListener("click", () => {
+  profileModal.style.display = "none";
+});
+
+// Close the modal when clicking outside the modal content
+window.addEventListener("click", (event) => {
+  if (event.target === profileModal) {
+    profileModal.style.display = "none";
+  }
+});
+
+// Preview the selected profile picture
+profilePicInput.addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    profilePicPreview.src = URL.createObjectURL(file);
+  }
+});
+
+removeProfilePicButton.addEventListener("click", async () => {
+  const confirmRemoval = confirm(
+    "Are you sure you want to remove your profile picture?"
+  );
+  if (!confirmRemoval) return;
+
+  const formData = new FormData();
+  formData.append("removeProfilePic", "true"); // Add the removeProfilePic field
+
+  try {
+    const response = await fetch("/updateProfile", {
+      method: "POST",
+      headers: {
+        "Session-Id": sessionStorage.getItem("userSessionId"), // Include the Session-Id header
+      },
+      body: formData, // Send the form data
+    });
+
+    if (response.ok) {
+      alert("Profile picture removed successfully!");
+      profilePicPreview.src = "/static/avatars/default-avatar.png"; // Reset to default avatar
+      sidebarAvatar.src = "/static/avatars/default-avatar.png"; // Update the sidebar avatar
+    } else {
+      alert("Failed to remove profile picture.");
+    }
+  } catch (error) {
+    console.error("Error removing profile picture:", error);
+    alert("An error occurred while removing your profile picture.");
+  }
+});
+
+// Save profile changes or password change
+function handleProfileSaveOrPasswordChange() {
+  const newUsername = editUsernameInput.value.trim();
+  const oldPassword = document.getElementById("old-password").value.trim();
+  const newPassword = editPasswordInput.value.trim();
+  const confirmPassword = document
+    .getElementById("confirm-password")
+    .value.trim();
+  const profilePic = profilePicInput.files[0];
+
+  // If the password tab is active, validate password fields
+  if (passwordTab.classList.contains("active")) {
+    if (!oldPassword) {
+      alert("Please enter your old password.");
+      return;
+    }
+    if (!newPassword) {
+      alert("Please enter a new password.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert("New password and confirmation do not match.");
+      return;
+    }
+  }
+
+  const formData = new FormData();
+  if (newUsername && profileTab.classList.contains("active"))
+    formData.append("username", newUsername);
+  if (oldPassword && passwordTab.classList.contains("active"))
+    formData.append("oldPassword", oldPassword);
+  if (newPassword && passwordTab.classList.contains("active"))
+    formData.append("newPassword", newPassword);
+  if (profilePic && profileTab.classList.contains("active"))
+    formData.append("profilePic", profilePic);
+
+  fetch("/updateProfile", {
+    method: "POST",
+    body: formData,
+    headers: {
+      "Session-Id": sessionStorage.getItem("userSessionId"),
+    },
+  })
+    .then(async (response) => {
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          alert("Profile updated successfully!");
+          if (newUsername) {
+            document.getElementById("sidebar-username").textContent =
+              newUsername;
+          }
+          if (profilePic) {
+            const avatarUrl = URL.createObjectURL(profilePic);
+            document.getElementById("sidebar-avatar").src = avatarUrl;
+          }
+          profileModal.style.display = "none";
+        } else {
+          alert("Failed to update profile: " + data.error);
+        }
+      } else {
+        alert("Failed to update profile.");
+      }
+    })
+    .catch((error) => {
+      console.error("Error updating profile:", error);
+      alert("An error occurred while updating your profile.");
+    });
+}
+
+// Attach the same handler to both buttons (save and change pass)
+saveProfileButton.addEventListener("click", handleProfileSaveOrPasswordChange);
+document
+  .getElementById("change-password-btn")
+  .addEventListener("click", handleProfileSaveOrPasswordChange);
+
+// Log out the user
+logoutButton.addEventListener("click", () => {
+  localStorage.clear();
+  sessionStorage.clear();
+  window.location.href = "index.html"; // Redirect to login page
+});
+
+/*
+-
+-
+-
+-
+-
+-
+*/
+
+// PASSWORD STRENGTH CHECKER
+
+const profilePasswordInput = document.getElementById("edit-password");
+const profileStrengthBar = document.getElementById(
+  "profile-password-strength-bar"
+);
+const profileReqLength = document.getElementById("profile-req-length");
+const profileReqUpper = document.getElementById("profile-req-upper");
+const profileReqLower = document.getElementById("profile-req-lower");
+const profileReqDigit = document.getElementById("profile-req-digit");
+const profileReqSpecial = document.getElementById("profile-req-special");
+
+if (profilePasswordInput) {
+  profilePasswordInput.addEventListener("input", function () {
+    const value = profilePasswordInput.value;
+    let strength = 0;
+
+    // Check requirements
+    const lengthOK = value.length >= 8;
+    const upperOK = /[A-Z]/.test(value);
+    const lowerOK = /[a-z]/.test(value);
+    const digitOK = /\d/.test(value);
+    const specialOK = /[^A-Za-z0-9]/.test(value);
+
+    // Update requirements list
+    profileReqLength.style.color = lengthOK ? "green" : "red";
+    profileReqUpper.style.color = upperOK ? "green" : "red";
+    profileReqLower.style.color = lowerOK ? "green" : "red";
+    profileReqDigit.style.color = digitOK ? "green" : "red";
+    profileReqSpecial.style.color = specialOK ? "green" : "red";
+
+    // Calculate strength
+    strength += lengthOK ? 1 : 0;
+    strength += upperOK ? 1 : 0;
+    strength += lowerOK ? 1 : 0;
+    strength += digitOK ? 1 : 0;
+    strength += specialOK ? 1 : 0;
+
+    // Update strength bar
+    const colors = ["#e53935", "#ff9800", "#fbc02d", "#43a047", "#388e3c"];
+    profileStrengthBar.style.width = strength * 20 + "%";
+    profileStrengthBar.style.background = colors[strength - 1] || "#e53935";
+  });
+}
+
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
+
+// UI LOGIC
+
+// Open file explorer when the media button is clicked
+mediaButton.addEventListener("click", () => {
+  fileInput.click();
+});
+
+// Handle file selection
+fileInput.addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  selectedFile = file;
+
+  // Clear previous preview
+  mediaPreview.innerHTML = "";
+  mediaPreview.style.display = "block";
+
+  // Create a preview for the selected file
+  const fileType = file.type.split("/")[0];
+  if (fileType === "image") {
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(file);
+    img.style.maxWidth = "200px";
+    img.style.maxHeight = "200px";
+    mediaPreview.appendChild(img);
+  } else if (fileType === "video") {
+    const video = document.createElement("video");
+    video.src = URL.createObjectURL(file);
+    video.controls = true;
+    video.style.maxWidth = "200px";
+    video.style.maxHeight = "200px";
+    video.preload = "metadata"; // Load metadata for the video
+    mediaPreview.appendChild(video);
+  }
+});
+
+// Back button logic for mobile
+backToSidebarButton.addEventListener("click", () => {
+  chatSidebar.style.display = "block"; // Show the sidebar
+  chatMain.style.display = "none"; // Hide the chat area
+  chatMain.classList.remove("active"); // Remove active class from chat-main
+  backToSidebarButton.classList.remove("active"); // Hide the back button
+});
+
+// Search functionality
+const searchToggle = document.getElementById("search-toggle");
+const searchBar = document.getElementById("search-bar");
+
+searchToggle.addEventListener("click", () => {
+  if (searchBar.style.display === "none") {
+    searchBar.style.display = "block";
+  } else {
+    searchBar.style.display = "none";
   }
 });
 
@@ -1323,103 +1563,67 @@ passwordTabBtn.addEventListener("click", () => {
   profileTab.classList.remove("active");
 });
 
-const profilePasswordInput = document.getElementById("edit-password");
-const profileStrengthBar = document.getElementById(
-  "profile-password-strength-bar"
-);
-const profileReqLength = document.getElementById("profile-req-length");
-const profileReqUpper = document.getElementById("profile-req-upper");
-const profileReqLower = document.getElementById("profile-req-lower");
-const profileReqDigit = document.getElementById("profile-req-digit");
-const profileReqSpecial = document.getElementById("profile-req-special");
+// Function to show feedback messages (WebSocket errors, etc.)
+function showFeedback(message, type) {
+  const feedbackMessage = document.createElement("div");
+  feedbackMessage.textContent = message;
+  feedbackMessage.style.padding = "10px";
+  feedbackMessage.style.margin = "5px 0";
+  feedbackMessage.style.borderRadius = "5px";
+  feedbackMessage.style.color = "#fff";
 
-if (profilePasswordInput) {
-  profilePasswordInput.addEventListener("input", function () {
-    const value = profilePasswordInput.value;
-    let strength = 0;
-
-    // Check requirements
-    const lengthOK = value.length >= 8;
-    const upperOK = /[A-Z]/.test(value);
-    const lowerOK = /[a-z]/.test(value);
-    const digitOK = /\d/.test(value);
-    const specialOK = /[^A-Za-z0-9]/.test(value);
-
-    // Update requirements list
-    profileReqLength.style.color = lengthOK ? "green" : "red";
-    profileReqUpper.style.color = upperOK ? "green" : "red";
-    profileReqLower.style.color = lowerOK ? "green" : "red";
-    profileReqDigit.style.color = digitOK ? "green" : "red";
-    profileReqSpecial.style.color = specialOK ? "green" : "red";
-
-    // Calculate strength
-    strength += lengthOK ? 1 : 0;
-    strength += upperOK ? 1 : 0;
-    strength += lowerOK ? 1 : 0;
-    strength += digitOK ? 1 : 0;
-    strength += specialOK ? 1 : 0;
-
-    // Update strength bar
-    const colors = ["#e53935", "#ff9800", "#fbc02d", "#43a047", "#388e3c"];
-    profileStrengthBar.style.width = strength * 20 + "%";
-    profileStrengthBar.style.background = colors[strength - 1] || "#e53935";
-  });
-}
-
-// Function to render group members
-async function renderGroupMembers() {
-  if (!currentGroupId) return;
-  const response = await fetch(`/getGroupInfo?groupId=${currentGroupId}`);
-  if (response.ok) {
-    const data = await response.json();
-    groupMembersList.innerHTML = "";
-    data.members.forEach((member) => {
-      const li = document.createElement("li");
-      li.textContent = member.username;
-      if (
-        isGroupOwner &&
-        member.username !== localStorage.getItem("username")
-      ) {
-        const removeBtn = document.createElement("button");
-        removeBtn.textContent = "Remove";
-        removeBtn.className = "remove-member-btn";
-        removeBtn.onclick = async () => {
-          await fetch("/removeGroupMember", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Session-Id": sessionStorage.getItem("userSessionId"),
-            },
-            body: JSON.stringify({
-              groupId: currentGroupId,
-              username: member.username,
-            }),
-          });
-          renderGroupMembers(); // Refresh after removal
-        };
-        li.appendChild(removeBtn);
-      }
-      groupMembersList.appendChild(li);
-    });
-    groupOwnerActions.style.display = isGroupOwner ? "block" : "none";
-  }
-}
-
-// Function to insert a date divider in the chatbox
-function insertDateDivider(dateObj, prepend = false) {
-  const divider = document.createElement("div");
-  divider.className = "date-divider";
-  divider.textContent = dateObj
-    .toLocaleString("en-US", {
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-    .replace(",", " -");
-  if (prepend) {
-    chatBox.insertBefore(divider, chatBox.firstChild);
+  if (type === "success") {
+    feedbackMessage.style.backgroundColor = "#28a745"; // Green for success
   } else {
-    chatBox.appendChild(divider);
+    feedbackMessage.style.backgroundColor = "#dc3545"; // Red for error
+  }
+
+  chatBox.appendChild(feedbackMessage);
+  chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to the bottom
+}
+
+/*
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+*/
+
+// HELPER METHODS
+
+const profilePictureCache = {}; // Cache for profile pictures
+
+// Function to fetch and cache profile pictures
+async function fetchProfilePicture(username) {
+  if (profilePictureCache[username]) {
+    return profilePictureCache[username];
+  }
+
+  try {
+    const response = await fetch(
+      `/getProfilePicture?username=${encodeURIComponent(username)}`
+    );
+    if (response.ok) {
+      const data = await response.json();
+      const profilePicture =
+        data.profilePicture || "/static/avatars/default-avatar.png";
+      profilePictureCache[username] = profilePicture; // Cache the result
+      return profilePicture;
+    } else {
+      console.error("Failed to fetch profile picture for user:", username);
+      return "/static/avatars/default-avatar.png"; // Fallback to default avatar
+    }
+  } catch (error) {
+    console.error("Error fetching profile picture:", error);
+    return "/static/avatars/default-avatar.png"; // Fallback to default avatar
   }
 }
