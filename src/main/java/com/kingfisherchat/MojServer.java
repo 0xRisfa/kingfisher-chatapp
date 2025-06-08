@@ -489,8 +489,8 @@ public class MojServer extends WebSocketServer {
         
                 File file;
         
-                // Check if the file is in the "avatars" directory
                 if (path.startsWith("/avatars")) {
+                    // Check if the file is in the "avatars" directory
                     file = new File("avatars" + path.replaceFirst("/avatars", ""));
                 } else if (path.startsWith("/uploads")) {
                     // Check if the file is in the "uploads" directory
@@ -1726,8 +1726,9 @@ public class MojServer extends WebSocketServer {
                 int groupId = ((Double) requestData.get("groupId")).intValue();
                 String username = (String) requestData.get("username");
 
-                // Get session user (must be owner)
+                // Allow: owner can remove anyone, or a member can remove themselves
                 int sessionUserId = getUserIdFromSession(exchange);
+                int userId = getIdfromUsername(username);
 
                 // Check if session user is group owner
                 String ownerSql = "SELECT CREATED_BY FROM ZAK_GROUP_CHATS WHERE ID = ?";
@@ -1738,13 +1739,12 @@ public class MojServer extends WebSocketServer {
                     ResultSet rs = stmt.executeQuery();
                     if (rs.next()) ownerId = rs.getInt("CREATED_BY");
                 }
-                if (sessionUserId != ownerId) {
+                if (sessionUserId != ownerId && sessionUserId != userId) {
                     exchange.sendResponseHeaders(403, -1); // Forbidden
                     return;
                 }
 
                 // Remove member
-                int userId = getIdfromUsername(username);
                 if (userId == -1) {
                     exchange.sendResponseHeaders(404, -1);
                     return;
@@ -1754,6 +1754,53 @@ public class MojServer extends WebSocketServer {
                     PreparedStatement stmt = conn.prepareStatement(removeSql)) {
                     stmt.setInt(1, groupId);
                     stmt.setInt(2, userId);
+                    stmt.executeUpdate();
+                }
+                exchange.sendResponseHeaders(200, -1);
+            } catch (Exception e) {
+                e.printStackTrace();
+                exchange.sendResponseHeaders(500, -1);
+            }
+        });
+
+        httpsServer.createContext("/renameGroup", exchange -> {
+            try {
+                if (!"POST".equals(exchange.getRequestMethod())) {
+                    exchange.sendResponseHeaders(405, -1);
+                    return;
+                }
+                BufferedReader reader = new BufferedReader(new InputStreamReader(exchange.getRequestBody()));
+                StringBuilder requestBody = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    requestBody.append(line);
+                }
+                Gson gson = new Gson();
+                Map<String, Object> requestData = gson.fromJson(requestBody.toString(), Map.class);
+                int groupId = ((Double) requestData.get("groupId")).intValue();
+                String newName = (String) requestData.get("newName");
+
+                // Only owner can rename
+                int sessionUserId = getUserIdFromSession(exchange);
+                String ownerSql = "SELECT CREATED_BY FROM ZAK_GROUP_CHATS WHERE ID = ?";
+                int ownerId = -1;
+                try (Connection conn = MySqlConnection.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(ownerSql)) {
+                    stmt.setInt(1, groupId);
+                    ResultSet rs = stmt.executeQuery();
+                    if (rs.next()) ownerId = rs.getInt("CREATED_BY");
+                }
+                if (sessionUserId != ownerId) {
+                    exchange.sendResponseHeaders(403, -1);
+                    return;
+                }
+
+                // Update group name
+                String updateSql = "UPDATE ZAK_GROUP_CHATS SET NAME = ? WHERE ID = ?";
+                try (Connection conn = MySqlConnection.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(updateSql)) {
+                    stmt.setString(1, newName);
+                    stmt.setInt(2, groupId);
                     stmt.executeUpdate();
                 }
                 exchange.sendResponseHeaders(200, -1);

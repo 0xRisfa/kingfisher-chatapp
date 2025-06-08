@@ -369,10 +369,6 @@ chat-box::-webkit-scrollbar-track {
   margin-top: 22px;
 }
 
-.message-container.sent .profile-pic {
-  display: none; /* Hide the profile picture for sent messages */
-}
-
 /* Message Content */
 .message-content {
   display: flex;
@@ -425,24 +421,23 @@ chat-box::-webkit-scrollbar-track {
 
 /* Message Menu */
 .message-menu {
-  position: absolute;
-  top: 10px;
-  right: 10px;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 35px;
+  margin-top: 15px;
   color: #888;
-  display: none; /* Hidden by default */
+  display: none;
+  height: 35px;
 }
 
 .message-container:hover .message-menu {
-  display: block; /* Show on hover */
+  display: block;
 }
 
 .delete-menu {
   position: absolute;
-  top: 30px;
-  right: 10px;
-  background-color: #fff;
+  top: 35px;
+  right: 170px;
+  background-color: #f8d7da;
   border: 1px solid #ddd;
   border-radius: 5px;
   padding: 5px 10px;
@@ -450,10 +445,6 @@ chat-box::-webkit-scrollbar-track {
   font-size: 14px;
   display: none; /* Hidden by default */
   z-index: 1000;
-}
-
-.delete-menu:hover {
-  background-color: #f8d7da;
   color: #721c24;
 }
 

@@ -849,6 +849,12 @@ async function renderGroupMembers() {
     data.members.forEach((member) => {
       const li = document.createElement("li");
       li.textContent = member.username;
+
+      // Show (owner) next to the owner's name for everyone
+      if (member.username === data.owner) {
+        li.textContent += " (owner)";
+      }
+
       if (
         isGroupOwner &&
         member.username !== localStorage.getItem("username")
@@ -874,9 +880,56 @@ async function renderGroupMembers() {
       }
       groupMembersList.appendChild(li);
     });
-    groupOwnerActions.style.display = isGroupOwner ? "block" : "none";
+
+    // Show "Leave Group" button for non-owners
+    const leaveGroupBtn = document.getElementById("leave-group-btn");
+    if (
+      data.owner !== localStorage.getItem("username") &&
+      data.members.some((m) => m.username === localStorage.getItem("username"))
+    ) {
+      leaveGroupBtn.style.display = "block";
+    } else {
+      leaveGroupBtn.style.display = "none";
+    }
   }
 }
+
+// Handle "Leave Group" button click
+document.getElementById("leave-group-btn").onclick = async function () {
+  if (!currentGroupId) return;
+  if (!confirm("Are you sure you want to leave this group?")) return;
+  try {
+    const response = await fetch("/removeGroupMember", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Session-Id": sessionStorage.getItem("userSessionId"),
+      },
+      body: JSON.stringify({
+        groupId: currentGroupId,
+        username: localStorage.getItem("username"),
+      }),
+    });
+    if (response.ok) {
+      alert("You have left the group.");
+      groupInfoModal.style.display = "none";
+      // Optionally, remove the group from the sidebar and clear chat if viewing it
+      const groupItem = document.querySelector(
+        `[data-group-id="${currentGroupId}"]`
+      );
+      if (groupItem) groupItem.remove();
+      if (sessionStorage.getItem("selectedGroupId") == currentGroupId) {
+        document.getElementById("chat-box").innerHTML = "";
+        document.getElementById("group-header").style.display = "none";
+        sessionStorage.removeItem("selectedGroupId");
+      }
+    } else {
+      alert("Failed to leave the group.");
+    }
+  } catch (error) {
+    alert("An error occurred while leaving the group.");
+  }
+};
 
 // Show add member UI when owner clicks "Add Member"
 addMemberBtn.addEventListener("click", () => {
@@ -928,6 +981,105 @@ addMemberSearch.addEventListener("input", async (event) => {
       addMemberSearchResults.appendChild(li);
     });
   }
+});
+
+// --- Group Rename Logic ---
+groupNameDisplay.addEventListener("click", function () {
+  // Only the group owner can rename
+  if (!isGroupOwner) return;
+
+  // Prevent multiple inputs
+  if (document.getElementById("rename-group-input")) return;
+
+  const currentName = groupNameDisplay.textContent
+    .replace(" (owner)", "")
+    .trim();
+
+  // Create input and buttons
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = "rename-group-input";
+  input.value = currentName;
+  input.style.fontSize = "18px";
+  input.style.padding = "4px 8px";
+  input.style.marginTop = "4px";
+  input.style.borderRadius = "5px";
+  input.style.border = "1px solid #ccc";
+  input.style.width = "90%";
+
+  const btnContainer = document.createElement("div");
+  btnContainer.style.display = "flex";
+  btnContainer.style.gap = "8px";
+  btnContainer.style.marginTop = "6px";
+
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Save";
+  saveBtn.style.background = "#007bff";
+  saveBtn.style.color = "#fff";
+  saveBtn.style.border = "none";
+  saveBtn.style.borderRadius = "5px";
+  saveBtn.style.padding = "4px 12px";
+  saveBtn.style.cursor = "pointer";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.style.background = "#ccc";
+  cancelBtn.style.color = "#222";
+  cancelBtn.style.border = "none";
+  cancelBtn.style.borderRadius = "5px";
+  cancelBtn.style.padding = "4px 12px";
+  cancelBtn.style.cursor = "pointer";
+
+  // Replace groupNameDisplay content
+  groupNameDisplay.innerHTML = "";
+  groupNameDisplay.appendChild(input);
+  btnContainer.appendChild(saveBtn);
+  btnContainer.appendChild(cancelBtn);
+  groupNameDisplay.appendChild(btnContainer);
+
+  input.focus();
+
+  // Cancel handler
+  cancelBtn.onclick = (event) => {
+    event.stopPropagation();
+    groupNameDisplay.innerHTML = "";
+    groupNameDisplay.textContent =
+      currentName;
+  };
+
+  // Save handler
+  saveBtn.onclick = async () => {
+    const newName = input.value.trim();
+    if (!newName) {
+      alert("Group name cannot be empty.");
+      return;
+    }
+    try {
+      const response = await fetch("/renameGroup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Session-Id": sessionStorage.getItem("userSessionId"),
+        },
+        body: JSON.stringify({
+          groupId: currentGroupId,
+          newName: newName,
+        }),
+      });
+      if (response.ok) {
+        groupNameDisplay.textContent = newName;
+        const groupItem = document.querySelector(
+          `[data-group-id="${currentGroupId}"]`
+        );
+        if (groupItem) groupItem.childNodes[0].nodeValue = newName;
+        alert("Group name updated!");
+      } else {
+        alert("Failed to rename group.");
+      }
+    } catch (err) {
+      alert("An error occurred while renaming the group.");
+    }
+  };
 });
 
 /*
@@ -1358,9 +1510,15 @@ function handleProfileSaveOrPasswordChange() {
         const data = await response.json();
         if (data.success) {
           alert("Profile updated successfully!");
-          if (newUsername) {
-            document.getElementById("sidebar-username").textContent =
-              newUsername;
+          // If username or password was changed, log out
+          if (
+            (newUsername && profileTab.classList.contains("active")) ||
+            (newPassword && passwordTab.classList.contains("active"))
+          ) {
+            localStorage.clear();
+            sessionStorage.clear();
+            window.location.href = "index.html";
+            return;
           }
           if (profilePic) {
             const avatarUrl = URL.createObjectURL(profilePic);
