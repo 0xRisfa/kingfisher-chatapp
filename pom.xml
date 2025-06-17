@@ -27,7 +27,7 @@
         <version>1.1</version>
     </dependency>
 
-    <!-- Java WebSocket dependency (alternative to Tyrus) -->
+    <!-- Java WebSocket dependency -->
     <dependency>
         <groupId>org.java-websocket</groupId>
         <artifactId>Java-WebSocket</artifactId>

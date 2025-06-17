@@ -423,7 +423,7 @@ chat-box::-webkit-scrollbar-track {
 .message-menu {
   cursor: pointer;
   font-size: 35px;
-  margin-top: 15px;
+  margin-top: 7px;
   color: #888;
   display: none;
   height: 35px;
@@ -434,18 +434,18 @@ chat-box::-webkit-scrollbar-track {
 }
 
 .delete-menu {
-  position: absolute;
-  top: 35px;
-  right: 170px;
+  position: static;
   background-color: #f8d7da;
   border: 1px solid #ddd;
   border-radius: 5px;
   padding: 5px 10px;
+  margin-right: 8px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 20px;
   display: none; /* Hidden by default */
   z-index: 1000;
   color: #721c24;
+  margin-top: 27px;
 }
 
 /* Chat Input Area */

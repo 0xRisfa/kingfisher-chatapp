@@ -83,12 +83,14 @@ async function selectChat(id, isGroup) {
     sessionStorage.setItem("selectedGroupId", id); // Store the selected group ID
     console.log("Selected group ID:", id);
 
-    // Find the group name of the chat
-    const chatItem = document.querySelector(`[data-group-id="${id}"]`);
-    let groupName = "Unknown Group";
-    if (chatItem) {
-      // If the group name is followed by an unread badge, exclude it
-      groupName = chatItem.childNodes[0].nodeValue.trim();
+    // Fetch group info and set group name and owner
+    const groupInfoResponse = await fetch(`/getGroupInfo?groupId=${id}`);
+    if (groupInfoResponse.ok) {
+      const data = await groupInfoResponse.json();
+      groupNameDisplay.textContent = data.name;
+      groupName = data.name;
+    } else {
+      groupNameDisplay.textContent = "Unknown Group";
     }
 
     // Hide the placeholder and show the chat box and input area
@@ -103,7 +105,7 @@ async function selectChat(id, isGroup) {
     groupNameDisplay.textContent = groupName;
     currentGroupId = id;
 
-    // Optionally, check if current user is group owner
+    // Check if current user is group owner
     const response = await fetch(`/getGroupInfo?groupId=${id}`);
     if (response.ok) {
       const data = await response.json();
@@ -623,24 +625,31 @@ async function showMessage(
     messageDiv.textContent = content || "Message content is missing";
   }
 
-  // Add delete functionality for sent messages
+  // for sent messages
   if (type === "sent") {
+    // Create a flex container for menu and delete
+    const menuWrapper = document.createElement("div");
+    menuWrapper.style.display = "flex";
+    menuWrapper.style.alignItems = "center";
+    menuWrapper.style.gap = "6px";
+
+    // Three-dot menu
     const menuButton = document.createElement("div");
     menuButton.classList.add("message-menu");
     menuButton.textContent = "⋮";
 
-    const deleteMenu = document.createElement("div");
+    // Delete button (hidden by default)
+    const deleteMenu = document.createElement("button");
     deleteMenu.classList.add("delete-menu");
-    deleteMenu.textContent = "Delete Message";
-    deleteMenu.style.display = "none";
+    deleteMenu.textContent = "Delete";
 
-    // Show the delete menu when the three-dot menu is clicked
-    menuButton.addEventListener("click", () => {
+    menuButton.addEventListener("click", (e) => {
+      e.stopPropagation();
       deleteMenu.style.display =
-        deleteMenu.style.display === "none" ? "block" : "none";
+        deleteMenu.style.display === "none" ? "inline-block" : "none";
     });
 
-    // Hide the delete menu when clicking outside
+    // Hide delete button when clicking outside
     document.addEventListener("click", (event) => {
       if (
         !menuButton.contains(event.target) &&
@@ -663,7 +672,7 @@ async function showMessage(
           });
 
           if (response.ok) {
-            messageContainer.remove(); // Remove the message from the chatbox
+            messageContainer.remove();
             alert("Message deleted successfully.");
           } else {
             alert("Failed to delete the message.");
@@ -675,8 +684,10 @@ async function showMessage(
       }
     });
 
-    messageContainer.appendChild(menuButton);
-    messageContainer.appendChild(deleteMenu);
+    menuWrapper.appendChild(deleteMenu);
+    menuWrapper.appendChild(menuButton);
+
+    messageContainer.appendChild(menuWrapper);
   }
 
   // Append sender name and message to wrapper div
@@ -846,6 +857,7 @@ async function renderGroupMembers() {
   if (response.ok) {
     const data = await response.json();
     groupMembersList.innerHTML = "";
+    groupOwnerActions.style.display = isGroupOwner ? "block" : "none";
     data.members.forEach((member) => {
       const li = document.createElement("li");
       li.textContent = member.username;
@@ -1043,8 +1055,7 @@ groupNameDisplay.addEventListener("click", function () {
   cancelBtn.onclick = (event) => {
     event.stopPropagation();
     groupNameDisplay.innerHTML = "";
-    groupNameDisplay.textContent =
-      currentName;
+    groupNameDisplay.textContent = currentName;
   };
 
   // Save handler
