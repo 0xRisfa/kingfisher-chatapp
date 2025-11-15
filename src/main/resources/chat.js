@@ -147,11 +147,12 @@ async function selectChat(id, isGroup) {
 
   // Show the chat area and hide the sidebar on mobile
   if (window.innerWidth <= 768) {
-    chatSidebar.style.display = "none"; // Hide the sidebar
+    chatSidebar.classList.add("hidden"); // Hide the sidebar with animation
     chatMain.style.display = "flex"; // Show the chat area
     chatMain.classList.add("active"); // Mark chat-main as active
     backToSidebarButton.style.display = "block";
     backToSidebarButton.classList.add("active"); // Show the back button
+    document.body.classList.add("chat-open"); // Prevent body scroll
   }
 
   // Close any existing WebSocket connection
@@ -454,6 +455,14 @@ async function loadMessages(
           );
           previousTimestamp = currentTimestamp;
         });
+        // Scroll to bottom after loading messages
+        setTimeout(() => {
+          if (typeof scrollToBottom !== 'undefined') {
+            scrollToBottom(chatBox, true);
+          } else {
+            chatBox.scrollTop = chatBox.scrollHeight;
+          }
+        }, 200);
       } else {
         // Collect message and divider "objects" in an array
         let previousTimestamp = null;
@@ -602,12 +611,30 @@ async function showMessage(
       placeholder.style.backgroundColor = "#f9f9f9";
 
       // Add a click event to load the video
-      placeholder.addEventListener("click", () => {
+      placeholder.addEventListener("click", (e) => {
+        e.stopPropagation(); // Prevent event bubbling
         const video = document.createElement("video");
         video.src = content;
         video.controls = true;
-        video.style.maxWidth = "200px";
-        video.style.maxHeight = "200px";
+        video.controlsList = "nodownload"; // Allow all controls except download
+        video.playsInline = true; // Important for mobile
+        video.preload = "metadata";
+        video.style.maxWidth = "100%";
+        video.style.maxHeight = "400px";
+        video.style.width = "auto";
+        video.style.height = "auto";
+        video.style.display = "block";
+        video.style.pointerEvents = "auto";
+        video.style.touchAction = "pan-x pan-y pinch-zoom"; // Allow panning for timeline scrubbing
+        
+        // Don't interfere with video controls - let browser handle all events natively
+        // The CSS touch-action settings will allow proper interaction with controls
+        
+        // Ensure video can receive focus for keyboard controls
+        video.setAttribute("tabindex", "0");
+        
+        // Make sure video controls are fully interactive
+        // No event handlers needed - browser handles video controls natively
 
         // Replace the placeholder with the video
         placeholder.replaceWith(video);
@@ -701,10 +728,14 @@ async function showMessage(
     chatBox.insertBefore(messageContainer, chatBox.firstChild);
   } else {
     chatBox.appendChild(messageContainer);
-  }
-
-  if (!prepend) {
-    chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to the bottom for the first load
+    // Auto-scroll to the bottom when appending new messages
+    setTimeout(() => {
+      if (typeof scrollToBottom !== 'undefined') {
+        scrollToBottom(chatBox, true);
+      } else {
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+    }, 100);
   }
 }
 
@@ -1662,19 +1693,67 @@ fileInput.addEventListener("change", (event) => {
     const video = document.createElement("video");
     video.src = URL.createObjectURL(file);
     video.controls = true;
-    video.style.maxWidth = "200px";
-    video.style.maxHeight = "200px";
+    video.controlsList = "nodownload"; // Allow all controls except download
+    video.playsInline = true; // Important for mobile
     video.preload = "metadata"; // Load metadata for the video
+    video.style.maxWidth = "100%";
+    video.style.maxHeight = "400px";
+    video.style.width = "auto";
+    video.style.height = "auto";
+    video.style.display = "block";
+    video.style.pointerEvents = "auto";
+    video.style.touchAction = "pan-x pan-y pinch-zoom"; // Allow panning for timeline scrubbing
+    video.setAttribute("tabindex", "0");
     mediaPreview.appendChild(video);
   }
 });
 
 // Back button logic for mobile
 backToSidebarButton.addEventListener("click", () => {
-  chatSidebar.style.display = "block"; // Show the sidebar
+  chatSidebar.classList.remove("hidden"); // Show the sidebar with animation
   chatMain.style.display = "none"; // Hide the chat area
   chatMain.classList.remove("active"); // Remove active class from chat-main
   backToSidebarButton.classList.remove("active"); // Hide the back button
+  document.body.classList.remove("chat-open"); // Allow body scroll
+});
+
+// Add swipe gesture support for mobile navigation
+if (window.innerWidth <= 768 && typeof TouchGestureHandler !== 'undefined') {
+  // Swipe right on chat main to go back to sidebar
+  new TouchGestureHandler(chatMain, {
+    onSwipeRight: () => {
+      if (chatMain.classList.contains('active')) {
+        backToSidebarButton.click();
+      }
+    },
+    threshold: 100
+  });
+  
+  // Swipe left on sidebar to open chat (if needed)
+  new TouchGestureHandler(chatSidebar, {
+    onSwipeLeft: () => {
+      // Could be used for quick actions in the future
+    },
+    threshold: 100
+  });
+}
+
+// Handle window resize
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (window.innerWidth > 768) {
+      // Desktop view - ensure both are visible
+      chatSidebar.classList.remove("hidden");
+      chatSidebar.style.display = "flex";
+      chatMain.style.display = "flex";
+      chatMain.classList.remove("active");
+      backToSidebarButton.classList.remove("active");
+      backToSidebarButton.style.display = "none";
+      document.body.classList.remove("chat-open");
+    }
+  }, 250);
 });
 
 // Search functionality
@@ -1748,7 +1827,10 @@ function showFeedback(message, type) {
   }
 
   chatBox.appendChild(feedbackMessage);
-  chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to the bottom
+  // Auto-scroll to the bottom
+  setTimeout(() => {
+    scrollToBottom(chatBox, true);
+  }, 100);
 }
 
 /*

@@ -1,28 +1,50 @@
 /* General Page Styling */
 body {
-  font-family: "Arial", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: -webkit-fill-available; /* iOS Safari */
   background-color: #f0f2f5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+  top: 0;
+  left: 0;
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* General chat container */
 .chat-container {
   display: flex;
   height: 100vh;
-  font-family: Arial, sans-serif;
+  height: -webkit-fill-available; /* iOS Safari */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
+  border-radius: 0;
   overflow: hidden;
+  position: relative;
+  transition: transform 0.3s ease-in-out;
+  max-height: 100vh;
+  max-height: -webkit-fill-available; /* iOS Safari */
+}
+
+@media (min-width: 769px) {
+  .chat-container {
+    border-radius: 8px;
+    position: relative;
+    height: 100vh;
+  }
 }
 
 /* Sidebar Layout */
@@ -30,6 +52,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: -webkit-fill-available; /* iOS Safari */
   min-width: 240px;
   max-width: 350px;
   width: 300px;
@@ -37,6 +60,34 @@ body {
   border-right: 1px solid #e0e0e0;
   position: relative;
   z-index: 10;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+  max-height: 100vh;
+  max-height: -webkit-fill-available; /* iOS Safari */
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .chat-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 100%;
+    height: 100vh;
+    height: -webkit-fill-available; /* iOS Safari */
+    max-height: 100vh;
+    max-height: -webkit-fill-available; /* iOS Safari */
+    transform: translateX(0);
+    z-index: 1000;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .chat-sidebar.hidden {
+    transform: translateX(-100%);
+  }
 }
 
 .sidebar-header {
@@ -94,15 +145,22 @@ body {
   font-weight: bold;
   border: none;
   border-radius: 25px;
-  padding: 10px 0;
+  padding: 12px 0;
   font-size: 15px;
   cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 2px 8px rgba(0, 123, 255, 0.08);
+  touch-action: manipulation;
+  min-height: 44px; /* Better touch target */
 }
 .create-group-button:hover {
   background: linear-gradient(90deg, #0056b3, #007bff);
   box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+  transform: translateY(-1px);
+}
+.create-group-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 123, 255, 0.12);
 }
 
 /* Search Bar Container */
@@ -169,10 +227,13 @@ body {
 .chat-list {
   flex: 1 1 auto;
   overflow-y: auto;
+  overflow-x: hidden;
   margin: 0;
   padding: 0 0 10px 0;
   background: #f7f9fb;
   list-style: none;
+  min-height: 0; /* Important for flex scrolling */
+  -webkit-overflow-scrolling: touch;
 }
 
 .chat-list li {
@@ -184,14 +245,30 @@ body {
   margin: 6px 10px;
   background: #fff;
   cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-size: 15px;
   position: relative;
+  touch-action: manipulation;
+  min-height: 60px; /* Better touch target */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Ensure videos inside message containers can receive all touch events */
+.message-container video,
+.message-container video * {
+  touch-action: pan-x pan-y pinch-zoom !important;
+  pointer-events: auto !important;
 }
 .chat-list li:hover,
 .chat-list li.active {
   background: #e6f0ff;
   box-shadow: 0 2px 8px rgba(0, 123, 255, 0.07);
+  transform: translateX(2px);
+}
+.chat-list li:active {
+  transform: scale(0.98);
+  background: #d6e8ff;
 }
 
 .unread-badge {
@@ -211,6 +288,7 @@ body {
 /* Sidebar Footer (profile/settings at the bottom) */
 .sidebar-footer {
   padding: 14px 18px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid #e0e0e0;
   background: #fff;
   font-size: 13px;
@@ -220,6 +298,9 @@ body {
   align-items: center;
   gap: 12px;
   justify-content: flex-start;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
 }
 
 /* Responsive: keep sidebar proportional */
@@ -275,26 +356,51 @@ body {
   background-color: #007bff;
   color: white;
   border: none;
-  padding: 10px;
+  padding: 12px 18px;
   font-size: 16px;
   cursor: pointer;
-  margin-bottom: 10px;
-  border-radius: 5px;
+  margin: 10px;
+  border-radius: 8px;
   text-align: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  touch-action: manipulation;
+  min-height: 44px;
+  box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
+  font-weight: 500;
 }
 
 .back-button:hover {
   background-color: #0056b3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+}
+
+.back-button:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 123, 255, 0.2);
 }
 
 .back-button.active {
   display: block; /* Show the back button when active */
+  animation: slideInLeft 0.3s ease-out;
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 /* Chat Box */
 .chat-box {
   flex: 1;
   padding: 15px;
+  padding-bottom: calc(15px + env(safe-area-inset-bottom, 0px) + 80px); /* Extra space for input area */
   overflow-y: auto;
   background-color: #f9f9f9;
   border-bottom: 1px solid #ddd;
@@ -303,6 +409,10 @@ body {
   display: flex;
   flex-direction: column; /* Stack messages vertically */
   gap: 10px; /* Add spacing between messages */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  overscroll-behavior: contain; /* Prevent scroll chaining */
+  min-height: 0; /* Allow flex shrinking */
 }
 
 /* Scrollbar Styling (Webkit Browsers) */
@@ -334,6 +444,116 @@ chat-box::-webkit-scrollbar-track {
   padding: 8px 12px;
   border-radius: 10px;
   position: relative;
+  animation: messageSlideIn 0.3s ease-out;
+  will-change: transform, opacity;
+}
+
+/* Video elements in messages */
+.message-container video {
+  pointer-events: auto !important;
+  touch-action: pan-x pan-y pinch-zoom !important; /* Allow panning for timeline scrubbing */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+  border-radius: 8px;
+  background: #000;
+  position: relative;
+  z-index: 10;
+  isolation: isolate; /* Create new stacking context */
+}
+
+/* Ensure all video control elements are interactive */
+.message-container video::-webkit-media-controls-panel {
+  pointer-events: auto !important;
+  touch-action: pan-x pan-y !important; /* Allow horizontal panning for timeline */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.message-container video::-webkit-media-controls-play-button {
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+  cursor: pointer;
+}
+
+.message-container video::-webkit-media-controls-timeline {
+  pointer-events: auto !important;
+  touch-action: pan-x !important; /* Allow horizontal panning for scrubbing */
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.message-container video::-webkit-media-controls-timeline::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto !important;
+  touch-action: pan-x !important; /* Allow dragging the thumb */
+  cursor: grab;
+}
+
+.message-container video::-webkit-media-controls-timeline::-webkit-slider-thumb:active {
+  cursor: grabbing;
+}
+
+.message-container video::-webkit-media-controls-current-time-display,
+.message-container video::-webkit-media-controls-time-remaining-display {
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.message-container video::-webkit-media-controls-volume-slider,
+.message-container video::-webkit-media-controls-mute-button,
+.message-container video::-webkit-media-controls-fullscreen-button {
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+  cursor: pointer;
+}
+
+/* Ensure video controls are clickable on mobile */
+@media (max-width: 768px) {
+  .message-container video {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 50vh;
+    touch-action: pan-x pan-y pinch-zoom !important; /* Allow all touch interactions */
+  }
+  
+  .message-container video::-webkit-media-controls {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+  
+  .message-container video::-webkit-media-controls-enclosure {
+    pointer-events: auto !important;
+    touch-action: pan-x pan-y !important; /* Allow panning for controls */
+  }
+  
+  /* Ensure timeline is fully interactive on mobile */
+  .message-container video::-webkit-media-controls-timeline {
+    touch-action: pan-x !important;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .message-container {
+    max-width: 85%;
+  }
 }
 
 /* Sent Messages */
@@ -452,10 +672,15 @@ chat-box::-webkit-scrollbar-track {
 #message-input {
   display: flex;
   padding: 10px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   background-color: #fff;
   border-top: 1px solid #ddd;
   align-items: center;
   gap: 10px;
+  position: sticky;
+  bottom: 0;
+  z-index: 100;
+  flex-shrink: 0;
 }
 
 #message-input input {
@@ -465,14 +690,23 @@ chat-box::-webkit-scrollbar-track {
   border-radius: 25px;
   font-size: 14px;
   outline: none;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   background-color: #f9f9f9;
+  -webkit-appearance: none; /* Remove iOS styling */
+  appearance: none;
 }
 
 #message-input input:focus {
   border-color: #007bff;
   box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
   background-color: #fff;
+  transform: scale(1.01);
+}
+
+@media (max-width: 768px) {
+  #message-input input {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
 }
 
 #message-input button {
@@ -485,19 +719,30 @@ chat-box::-webkit-scrollbar-track {
   font-size: 14px;
   font-weight: bold;
   outline: none;
-  transition: background-color 0.3s, transform 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: manipulation;
+  min-height: 44px;
+  min-width: 60px;
 }
 
 #message-input button:hover {
   background-color: #0056b3;
   transform: scale(1.05);
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
 }
 
 #message-input button:active {
   transform: scale(0.95);
+  box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
+}
+
+#message-input button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 @keyframes fadeIn {
@@ -893,46 +1138,121 @@ button {
 
 /* Ensure the chat-main takes up the full height on mobile */
 @media (max-width: 768px) {
+  /* Use CSS custom properties for safe area */
+  :root {
+    --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  }
+
+  html, body {
+    height: 100%;
+    height: -webkit-fill-available; /* iOS Safari */
+    overflow: hidden;
+  }
+
   .chat-container {
     flex-direction: column; /* Stack sidebar and chat area vertically */
+    height: 100vh;
+    height: -webkit-fill-available; /* iOS Safari */
+    max-height: 100vh;
+    max-height: -webkit-fill-available; /* iOS Safari */
   }
 
   .chat-sidebar {
     width: 100%;
+    height: 100vh;
+    height: -webkit-fill-available; /* iOS Safari */
+    max-height: 100vh;
+    max-height: -webkit-fill-available; /* iOS Safari */
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .chat-main {
     display: none; /* Hide the chat area by default */
-    flex: 1;
     flex-direction: column;
-    height: 100%; /* Ensure it takes the full height */
+    height: 100vh;
+    height: -webkit-fill-available; /* iOS Safari */
+    max-height: 100vh;
+    max-height: -webkit-fill-available; /* iOS Safari */
     overflow: hidden; /* Prevent content overflow */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    background: #f9f9f9;
+    z-index: 999;
   }
 
   .chat-main.active {
     display: flex; /* Show the chat area when active */
+    animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  @keyframes slideInRight {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
   }
 
   .chat-box {
     flex: 1;
     overflow-y: auto; /* Enable scrolling for the chat box */
+    overflow-x: hidden;
+    padding-bottom: calc(15px + var(--safe-area-inset-bottom) + 90px); /* Space for input + safe area */
+    min-height: 0; /* Important for flex */
+    -webkit-overflow-scrolling: touch;
   }
 
   #message-input {
     display: flex;
-    padding: 10px;
+    padding: 12px 10px;
+    padding-bottom: calc(12px + var(--safe-area-inset-bottom));
     background-color: #fff;
     border-top: 1px solid #ddd;
     align-items: center;
     gap: 10px;
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+    flex-shrink: 0;
+    min-height: calc(60px + var(--safe-area-inset-bottom));
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+  }
+
+  .sidebar-footer {
+    padding-bottom: calc(14px + var(--safe-area-inset-bottom));
+    min-height: calc(56px + var(--safe-area-inset-bottom));
   }
 
   .back-button {
     display: none; /* Hide the back button by default */
+    margin-top: var(--safe-area-inset-top);
+    padding-top: calc(10px + var(--safe-area-inset-top));
   }
 
   .back-button.active {
     display: block; /* Show the back button when active */
+  }
+  
+  /* Prevent body scroll when modal is open */
+  body.modal-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Group header safe area */
+  .group-header {
+    padding-top: calc(12px + var(--safe-area-inset-top));
+    padding-bottom: 12px;
   }
 }
 
