@@ -16,6 +16,11 @@ public class Config {
     }
 
     public static String get(String key) {
+        String envKey = key.replace('.', '_').toUpperCase();
+        String value = System.getenv(envKey);
+        if (value != null) {
+            return value;
+        }
         return properties.getProperty(key);
     }
 }

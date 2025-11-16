@@ -1,5 +1,8 @@
 package com.kingfisherchat;
 
+import com.sun.net.httpserver.HttpsServer;
+import javax.net.ssl.SSLContext;
+
 /**
  * Main server class that starts the WebSocket and HTTPS servers.
  * This class has been refactored to use modular components:
@@ -11,12 +14,17 @@ package com.kingfisherchat;
 public class MojServer {
 
     public static void main(String[] args) throws Exception {
-        // Start the WebSocket server
-        WebSocketHandler webSocketServer = new WebSocketHandler(8081);
+        // Initialize the HTTPS server and get the SSLContext
+        HttpsServer httpsServer = HttpServerManager.initializeHttpsServerAndGetSslContext();
+        SSLContext sslContext = HttpServerManager.getSslContext();
+
+        // Start the WebSocket server with SSLContext
+        WebSocketHandler webSocketServer = new WebSocketHandler(8081, sslContext);
         webSocketServer.start();
-        System.out.println("WebSocket server started on port 8081");
+        System.out.println("WebSocket server started on port 8081 with WSS");
 
         // Start the HTTPS server
         HttpServerManager.startHttpsServer();
     }
 }
+

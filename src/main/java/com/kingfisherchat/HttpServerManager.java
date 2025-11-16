@@ -13,11 +13,17 @@ import java.util.concurrent.Executors;
  * Manages the HTTPS server and all HTTP endpoints.
  */
 public class HttpServerManager {
-    
+
+    private static SSLContext sslContext;
+    private static HttpsServer httpsServer;
+
     /**
-     * Starts the HTTPS server on port 8443.
+     * Initializes the HTTPS server and returns the SSLContext.
+     * This method should be called once to set up the server and get the SSLContext for WebSockets.
+     * @return The initialized SSLContext.
+     * @throws Exception if initialization fails.
      */
-    public static void startHttpsServer() throws Exception {
+    public static HttpsServer initializeHttpsServerAndGetSslContext() throws Exception {
         // Load the keystore
         char[] keystorePassword = Config.get("keystore.password").toCharArray();
         KeyStore ks = KeyStore.getInstance("JKS");
@@ -32,19 +38,39 @@ public class HttpServerManager {
         tmf.init(ks);
 
         // Initialize the SSL context
-        SSLContext sslContext = SSLContext.getInstance("TLS");
+        sslContext = SSLContext.getInstance("TLS");
         sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
         // Create the HTTPS server
-        HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress(8443), 0);
+        httpsServer = HttpsServer.create(new InetSocketAddress(8443), 0);
         httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext));
 
         // Register all endpoints
         registerEndpoints(httpsServer);
-
+        
         httpsServer.setExecutor(Executors.newFixedThreadPool(20));
-        httpsServer.start();
-        System.out.println("HTTPS Server started at https://localhost:8443");
+        System.out.println("HTTPS Server initialized on port 8443");
+        return httpsServer;
+    }
+
+    /**
+     * Starts the previously initialized HTTPS server.
+     */
+    public static void startHttpsServer() {
+        if (httpsServer != null) {
+            httpsServer.start();
+            System.out.println("HTTPS Server started at https://localhost:8443");
+        } else {
+            System.err.println("HTTPS Server not initialized. Call initializeHttpsServerAndGetSslContext() first.");
+        }
+    }
+
+    /**
+     * Returns the initialized SSLContext.
+     * @return The SSLContext.
+     */
+    public static SSLContext getSslContext() {
+        return sslContext;
     }
     
     /**

@@ -3,7 +3,9 @@ package com.kingfisherchat;
 import com.kingfisherchat.utils.DatabaseUtils;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
-import org.java_websocket.server.WebSocketServer;
+import org.java_websocket.server.WebSocketServer; // Keep extending WebSocketServer
+import org.java_websocket.server.DefaultSSLWebSocketServerFactory; // Import the factory
+import javax.net.ssl.SSLContext;
 import java.net.InetSocketAddress;
 import java.sql.*;
 import java.util.Map;
@@ -11,10 +13,12 @@ import java.util.Map;
 /**
  * Handles WebSocket connections and message routing.
  */
-public class WebSocketHandler extends WebSocketServer {
+public class WebSocketHandler extends WebSocketServer { // Extend WebSocketServer
     
-    public WebSocketHandler(int port) {
+    public WebSocketHandler(int port, SSLContext sslContext) {
         super(new InetSocketAddress(port));
+        // Use the factory to enable SSL/TLS
+        setWebSocketFactory(new DefaultSSLWebSocketServerFactory(sslContext));
     }
     
     @Override

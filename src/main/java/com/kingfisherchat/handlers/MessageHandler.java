@@ -239,7 +239,8 @@ public class MessageHandler {
         Gson gson = new Gson();
         Map<String, Object> requestData = gson.fromJson(requestBody.toString(), Map.class);
         int id = ((Double) requestData.get("id")).intValue();
-        boolean isGroup = (Boolean) requestData.get("isGroup");
+        Boolean isGroupBoolean = (Boolean) requestData.get("isGroup");
+        boolean isGroup = Optional.ofNullable(isGroupBoolean).orElse(false);
 
         int userId = getUserIdFromSession(exchange);
 
